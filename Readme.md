@@ -213,25 +213,35 @@ docker compose exec autenticacao pytest --cov=src --cov-fail-under=75
 ```
 
 ---
-
-## 🛠️ Tecnologias
-
+ 
+## Tecnologias
+ 
 - **Python** 3.12+
-- **FastAPI** — framework web
-- **Pydantic** — validação de dados e configurações
-- **SQLAlchemy / SQLModel** — ORM
-- **python-jose / PyJWT** — tokens JWT
-- **passlib (bcrypt)** — hash de senhas
-- **Pytest + pytest-cov** — testes e cobertura
+- **FastAPI** `0.142.2` — framework web
+- **Starlette** `1.7.0` — base ASGI do FastAPI (rotas, requisições e respostas)
+- **Pydantic** `2.13.5` — validação e serialização de dados
+- **Uvicorn** `0.54.0` — servidor ASGI que executa a aplicação
+- **OpenTelemetry API** `1.45.0` — instrumentação para rastreamento e observabilidade
 - **Docker / Docker Compose** — conteinerização
-
+### Dependências (`requirements.txt`)
+ 
+```txt
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.15.1
+click==8.5.0
+fastapi==0.142.2
+h11==0.16.0
+idna==3.20
+opentelemetry-api==1.45.0
+pydantic==2.13.5
+pydantic_core==2.46.5
+starlette==1.7.0
+typing-inspection==0.4.4
+typing_extensions==4.16.0
+uvicorn==0.54.0
+```
+ 
+> As bibliotecas `anyio`, `h11`, `idna`, `click`, `annotated-types`, `pydantic_core`, `typing-inspection` e `typing_extensions` são dependências internas do FastAPI, Pydantic e Uvicorn — não são usadas diretamente no código.
+ 
 ---
-
-## ✅ Checklist de entrega
-
-- [ ] Idioma das rotas e JSONs alinhado com a turma
-- [ ] Formato de erro padrão implementado em todos os serviços
-- [ ] Datas em ISO 8601 e valores em centavos
-- [ ] Swagger completo com exemplos
-- [ ] `Dockerfile` em cada serviço e `docker-compose.yml` funcionando com um único comando
-- [ ] Cobertura de testes ≥ 75%

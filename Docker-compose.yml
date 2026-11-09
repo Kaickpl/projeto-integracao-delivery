@@ -1,0 +1,27 @@
+services:
+  autenticacao:
+    build: ./autenticacao
+    ports:
+      - "8001:8001"
+    env_file: ./autenticacao/.env
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8001 --reload
+    volumes:
+      - ./autenticacao/src:/code/src
+
+  perfis:
+    build: ./perfis
+    ports:
+      - "8002:8002"
+    env_file: ./perfis/.env
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8002 --reload
+    volumes:
+      - ./perfis/src:/code/src
+
+  autorizacao:
+    build: ./autorizacao
+    ports:
+      - "8003:8003"
+    env_file: ./autorizacao/.env
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8003 --reload
+    volumes:
+      - ./autorizacao/src:/code/src

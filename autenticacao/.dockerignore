@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Ambientes virtuais
+.venv/
+venv/
+env/
+
+# Segredos e configuração local
+.env
+.env.example
+!.env.example
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Docker (não precisa entrar na imagem)
+Dockerfile
+docker-compose*.yml
+.dockerignore
+
+# Documentação e arquivos soltos
+README.md
+*.http

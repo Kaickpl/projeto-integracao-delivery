@@ -108,7 +108,7 @@ Todas as APIs devolvem o mesmo formato, com o **código HTTP correto** (400, 401
 }
 ```
 
-Exemplo de implementação no FastAPI (`main.py`):
+Exemplo de implementação no FastAPI (`autenticacao/src`):
 
 ```python
 from fastapi import FastAPI, HTTPException, Request
@@ -158,6 +158,14 @@ Nenhuma outra dependência precisa ser instalada localmente.
 
 ### Subindo os serviços
 
+Copie o `.env.example` de cada serviço para `.env` e preencha os valores:
+
+   ```bash
+   cp autenticacao/.env.example autenticacao/.env
+   cp perfis/.env.example perfis/.env
+   cp autorizacao/.env.example autorizacao/.env
+   ```
+
 ```bash
 docker compose up --build
 ```
@@ -173,6 +181,14 @@ Com os serviços rodando, acesse:
 | Autorização | http://localhost:8003/docs | http://localhost:8003/redoc |
 
 Todos os contratos devem estar documentados com `response_model`, exemplos e códigos de status, para que outras equipes consigam trabalhar com **mocks** antes da API real ficar pronta.
+
+### Comandos úteis (docker)
+
+```bash
+docker compose up -d              # sobe em segundo plano
+docker compose logs -f perfis     # acompanha os logs de um serviço
+docker compose down               # derruba tudo
+```
 
 ### Rodando sem Docker (desenvolvimento)
 

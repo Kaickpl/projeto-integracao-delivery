@@ -12,14 +12,13 @@ class TipoVeiculo(str, enum.Enum):
     MOTO = "MOTO"
     CARRO = "CARRO"
 
+class StatusEntregador(str, enum.Enum):
+    DISPONIVEL = "DISPONIVEL"
+    OCUPADO = "OCUPADO"
+    INATIVO = "INATIVO"
+
 
 class Entregador(Perfil):
-    """Entregador que leva os pedidos.
-
-    Os campos comuns ficam em `perfis` (o `cpf_cnpj` guarda o CPF). A tabela
-    `entregadores` guarda o veículo. Placa e CNH são obrigatórias para moto
-    e carro; para bicicleta podem ficar vazias. O banco garante essa regra.
-    """
 
     __tablename__ = "entregadores"
 

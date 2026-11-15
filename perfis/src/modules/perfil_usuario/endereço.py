@@ -32,15 +32,15 @@ class Endereco(Base):
     perfil_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("perfis.id", ondelete="CASCADE"), index=True
     )
-    apelido: Mapped[str | None] = mapped_column(String(50))  # ex.: "Casa", "Trabalho"
-    cep: Mapped[str] = mapped_column(String(8))  # só dígitos, ex.: 55290000
+    apelido: Mapped[str | None] = mapped_column(String(50))
+    cep: Mapped[str] = mapped_column(String(8))
     logradouro: Mapped[str] = mapped_column(String(150))
-    numero: Mapped[str] = mapped_column(String(10))  # texto, aceita "S/N" e "12A"
+    numero: Mapped[str] = mapped_column(String(10))
     complemento: Mapped[str | None] = mapped_column(String(100))
     bairro: Mapped[str] = mapped_column(String(100))
     cidade: Mapped[str] = mapped_column(String(100))
-    uf: Mapped[str] = mapped_column(String(2))  # sigla em maiúsculas, ex.: PE
-    referencia: Mapped[str | None] = mapped_column(String(150))  # ajuda o entregador
+    uf: Mapped[str] = mapped_column(String(2))
+    referencia: Mapped[str | None] = mapped_column(String(150))
     principal: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )

@@ -79,7 +79,7 @@ projeto/
 |--------|---------|-----------|-------------------|
 | Rota | `router.py` | Recebe a requisição e devolve a resposta | Regra de negócio |
 | Contrato | `schemas.py` | Valida entrada e formata saída (Pydantic) | Acessar o banco |
-| Persistência | `models.py` | Define tabelas/coleções | Validar regras |
+| Persistência | `perfil.py` | Define tabelas/coleções | Validar regras |
 | Negócio | `service.py` | Aplica as regras do domínio | Lidar com HTTP |
 
 Fluxo de uma requisição:

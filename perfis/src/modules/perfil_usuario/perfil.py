@@ -18,6 +18,8 @@ class StatusConta(str, enum.Enum):
 class TipoPerfil(str, enum.Enum):
     CLIENTE = "CLIENTE"
     LOJA = "LOJA"
+    ENTREGADOR = "ENTREGADOR"
+    ADMIN = "ADMIN"
 
 
 class Perfil(Base):

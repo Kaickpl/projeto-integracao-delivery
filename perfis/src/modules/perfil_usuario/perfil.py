@@ -44,3 +44,10 @@ class Perfil(Base):
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    # `tipo` decide qual subclasse é carregada. `polymorphic_abstract` impede
+    # gravar um Perfil genérico: só Cliente, Loja, Entregador e Admin.
+    __mapper_args__ = {
+        "polymorphic_on": tipo,
+        "polymorphic_abstract": True,
+    }

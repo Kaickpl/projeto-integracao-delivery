@@ -21,12 +21,20 @@ from .perfil import TipoPerfil
 
 
 class Endereco(Base):
+    """Endereço de um Cliente (vários) ou de uma Loja (um só).
+
+    Entregador e Admin não têm endereço. A regra vale também no banco:
+    `perfil_tipo` é copiado do perfil pela FK composta (perfil_id, perfil_tipo)
+    e só aceita CLIENTE ou LOJA.
+    """
+
     __tablename__ = "enderecos"
 
     id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     perfil_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
+    # Preenchido pelo relacionamento (Cliente.enderecos / Loja.endereco).
     perfil_tipo: Mapped[TipoPerfil] = mapped_column(
         Enum(TipoPerfil, name="tipo_perfil")
     )

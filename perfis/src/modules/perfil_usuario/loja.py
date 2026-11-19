@@ -32,6 +32,11 @@ class StatusFuncionamento(str, enum.Enum):
 
 
 class Loja(Perfil):
+    """Perfil da loja (restaurante).
+
+    `nome` e `telefone` vêm de Perfil, e o endereço fica em `endereco`.
+    Os horários de funcionamento são cadastrados à parte.
+    """
 
     __tablename__ = "lojas"
 

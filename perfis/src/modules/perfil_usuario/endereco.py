@@ -27,7 +27,6 @@ class Endereco(Base):
         UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
     )
     perfil_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
-    # Preenchido pelo relacionamento (Cliente.enderecos / Loja.endereco).
     perfil_tipo: Mapped[TipoPerfil] = mapped_column(
         Enum(TipoPerfil, name="tipo_perfil")
     )

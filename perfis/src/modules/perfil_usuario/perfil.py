@@ -32,6 +32,7 @@ class Perfil(Base):
     nome: Mapped[str] = mapped_column(String(150))
     cpf_cnpj: Mapped[str] = mapped_column(String(14), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
+    senha: Mapped[str] = mapped_column(String(30), unique=True, index=True)
     telefone: Mapped[str] = mapped_column(String(20))
     status: Mapped[StatusConta] = mapped_column(
         Enum(StatusConta, name="status_conta"),

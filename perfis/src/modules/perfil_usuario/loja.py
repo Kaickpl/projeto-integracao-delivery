@@ -1,10 +1,18 @@
 import enum
 import uuid
 
-from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer, String, text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import (
+    CheckConstraint,
+    Enum,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+    text,
+)
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from .endereco import CamposEndereco, restricoes_endereco
+from .endereco import Endereco
 from .perfil import Perfil, TipoPerfil
 
 
@@ -31,7 +39,14 @@ class StatusFuncionamento(str, enum.Enum):
     INDISPONIVEL = "INDISPONIVEL"
 
 
-class Loja(CamposEndereco, Perfil):
+class Loja(Perfil):
+    """Perfil da loja (restaurante).
+
+    `nome` e `telefone` vêm de Perfil. O endereço é obrigatório e fica na
+    tabela `enderecos`, ligado por `endereco_id`. Os horários de
+    funcionamento são cadastrados à parte.
+    """
+
     __tablename__ = "lojas"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -57,9 +72,22 @@ class Loja(CamposEndereco, Perfil):
         default=StatusFuncionamento.FECHADO,
         server_default=StatusFuncionamento.FECHADO.value,
     )
+    # Obrigatório. O banco não deixa apagar um endereço que uma loja usa.
+    endereco_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("enderecos.id", ondelete="RESTRICT", name="fk_lojas_endereco")
+    )
+
+    # Exatamente um endereço por loja. Apagar a loja (pelo SQLAlchemy) apaga
+    # o endereço dela junto.
+    endereco: Mapped[Endereco] = relationship(
+        back_populates="loja",
+        cascade="all, delete-orphan",
+        single_parent=True,
+    )
 
     __table_args__ = (
-        *restricoes_endereco("loja"),
+        # Um endereço pertence a uma loja só.
+        UniqueConstraint("endereco_id", name="uq_lojas_endereco_id"),
         CheckConstraint("taxa_entrega >= 0", name="ck_loja_taxa_entrega_nao_negativa"),
         CheckConstraint(
             "tempo_estimado_min > 0 AND tempo_estimado_max > 0",

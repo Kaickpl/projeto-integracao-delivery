@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, Enum, String, UniqueConstraint, func
+from sqlalchemy import DateTime, Enum, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -43,12 +43,6 @@ class Perfil(Base):
     )
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
-    )
-
-    __table_args__ = (
-        # Alvo da FK composta de `enderecos`, que garante no banco que só
-        # Cliente e Loja têm endereço.
-        UniqueConstraint("id", "tipo", name="uq_perfis_id_tipo"),
     )
 
     # `tipo` decide qual subclasse é carregada. `polymorphic_abstract` impede

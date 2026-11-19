@@ -5,8 +5,7 @@ from sqlalchemy import (
     Boolean,
     CheckConstraint,
     DateTime,
-    Enum,
-    ForeignKeyConstraint,
+    ForeignKey,
     Index,
     String,
     func,
@@ -17,28 +16,14 @@ from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database import Base
 
-from .perfil import TipoPerfil
 
+class CamposEndereco:
+    """Campos de endereço usados por Endereco (cliente) e por Loja.
 
-class Endereco(Base):
-    """Endereço de um Cliente (vários) ou de uma Loja (um só).
-
-    Entregador e Admin não têm endereço. A regra vale também no banco:
-    `perfil_tipo` é copiado do perfil pela FK composta (perfil_id, perfil_tipo)
-    e só aceita CLIENTE ou LOJA.
+    Escritos uma vez só aqui; cada classe que herda ganha essas colunas na
+    própria tabela.
     """
 
-    __tablename__ = "enderecos"
-
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    perfil_id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), index=True)
-    # Preenchido pelo relacionamento (Cliente.enderecos / Loja.endereco).
-    perfil_tipo: Mapped[TipoPerfil] = mapped_column(
-        Enum(TipoPerfil, name="tipo_perfil")
-    )
-    apelido: Mapped[str | None] = mapped_column(String(50))
     cep: Mapped[str] = mapped_column(String(8))
     logradouro: Mapped[str] = mapped_column(String(150))
     numero: Mapped[str] = mapped_column(String(10))
@@ -47,6 +32,32 @@ class Endereco(Base):
     cidade: Mapped[str] = mapped_column(String(100))
     uf: Mapped[str] = mapped_column(String(2))
     referencia: Mapped[str | None] = mapped_column(String(150))
+
+
+def restricoes_endereco(prefixo: str) -> tuple[CheckConstraint, ...]:
+    """CHECKs de CEP e UF, com nomes próprios para cada tabela."""
+    return (
+        CheckConstraint("cep ~ '^[0-9]{8}$'", name=f"ck_{prefixo}_cep_8_digitos"),
+        CheckConstraint("uf ~ '^[A-Z]{2}$'", name=f"ck_{prefixo}_uf_sigla"),
+    )
+
+
+class Endereco(CamposEndereco, Base):
+    """Endereço de cliente. Um cliente pode ter vários (casa, trabalho...).
+
+    O endereço da loja não fica aqui: fica nas colunas da própria tabela
+    `lojas`. Entregador e Admin não têm endereço.
+    """
+
+    __tablename__ = "enderecos"
+
+    id: Mapped[uuid.UUID] = mapped_column(
+        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
+    )
+    cliente_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("clientes.id", ondelete="CASCADE"), index=True
+    )
+    apelido: Mapped[str | None] = mapped_column(String(50))
     principal: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default=text("false")
     )
@@ -58,28 +69,12 @@ class Endereco(Base):
     )
 
     __table_args__ = (
-        ForeignKeyConstraint(
-            ["perfil_id", "perfil_tipo"],
-            ["perfis.id", "perfis.tipo"],
-            ondelete="CASCADE",
-            name="fk_enderecos_perfil",
-        ),
-        CheckConstraint(
-            "perfil_tipo IN ('CLIENTE', 'LOJA')",
-            name="ck_endereco_somente_cliente_ou_loja",
-        ),
-        CheckConstraint("cep ~ '^[0-9]{8}$'", name="ck_endereco_cep_8_digitos"),
-        CheckConstraint("uf ~ '^[A-Z]{2}$'", name="ck_endereco_uf_sigla"),
+        *restricoes_endereco("endereco"),
+        # No máximo um endereço principal por cliente.
         Index(
-            "uq_endereco_principal_por_perfil",
-            "perfil_id",
+            "uq_endereco_principal_por_cliente",
+            "cliente_id",
             unique=True,
             postgresql_where=text("principal"),
-        ),
-        Index(
-            "uq_endereco_unico_por_loja",
-            "perfil_id",
-            unique=True,
-            postgresql_where=text("perfil_tipo = 'LOJA'"),
         ),
     )

@@ -2,9 +2,9 @@ import enum
 import uuid
 
 from sqlalchemy import CheckConstraint, Enum, ForeignKey, Integer, String, text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
-from .endereco import Endereco
+from .endereco import CamposEndereco, restricoes_endereco
 from .perfil import Perfil, TipoPerfil
 
 
@@ -31,13 +31,7 @@ class StatusFuncionamento(str, enum.Enum):
     INDISPONIVEL = "INDISPONIVEL"
 
 
-class Loja(Perfil):
-    """Perfil da loja (restaurante).
-
-    `nome` e `telefone` vêm de Perfil, e o endereço fica em `endereco`.
-    Os horários de funcionamento são cadastrados à parte.
-    """
-
+class Loja(CamposEndereco, Perfil):
     __tablename__ = "lojas"
 
     id: Mapped[uuid.UUID] = mapped_column(
@@ -64,14 +58,8 @@ class Loja(Perfil):
         server_default=StatusFuncionamento.FECHADO.value,
     )
 
-    # Uma loja tem no máximo um endereço (garantido também no banco pelo
-    # índice `uq_endereco_unico_por_loja`).
-    endereco: Mapped[Endereco | None] = relationship(
-        cascade="all, delete-orphan",
-        passive_deletes=True,
-    )
-
     __table_args__ = (
+        *restricoes_endereco("loja"),
         CheckConstraint("taxa_entrega >= 0", name="ck_loja_taxa_entrega_nao_negativa"),
         CheckConstraint(
             "tempo_estimado_min > 0 AND tempo_estimado_max > 0",

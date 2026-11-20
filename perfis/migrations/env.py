@@ -4,7 +4,7 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 from src.core.config import settings
 from src.core.database import Base
-from src.modules.perfil_usuario import perfil # noqa: F401
+import src.modules.perfil_usuario  # noqa: F401
 
 from alembic import context
 

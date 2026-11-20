@@ -1,0 +1,97 @@
+from uuid import UUID
+
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
+
+from src.modules.admin.schemas import AdminCreate, PerfilAdminUpdate
+from src.modules.perfil_usuario.admin import Admin
+from src.modules.perfil_usuario.perfil import Perfil, StatusConta, TipoPerfil
+
+
+class PerfilNaoEncontrado(Exception):
+    pass
+
+
+class DadoDuplicado(Exception):
+    pass
+
+
+class AcaoNaoPermitida(Exception):
+    def __init__(self, mensagem: str):
+        self.mensagem = mensagem
+
+
+def _commit(db: Session) -> None:
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise DadoDuplicado()
+
+
+def buscar_perfil(db: Session, perfil_id: UUID) -> Perfil:
+    perfil = db.get(Perfil, perfil_id)
+    if perfil is None:
+        raise PerfilNaoEncontrado()
+    return perfil
+
+
+def listar_perfis(
+    db: Session,
+    tipo: TipoPerfil | None = None,
+    status: StatusConta | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[Perfil]:
+    stmt = select(Perfil).order_by(Perfil.criado_em).offset(skip).limit(limit)
+    if tipo:
+        stmt = stmt.where(Perfil.tipo == tipo)
+    if status:
+        stmt = stmt.where(Perfil.status == status)
+    return list(db.scalars(stmt))
+
+
+def criar_admin(db: Session, dados: AdminCreate) -> Perfil:
+    admin = Admin(**dados.model_dump(), status=StatusConta.ATIVO)
+    db.add(admin)
+    _commit(db)
+    db.refresh(admin)
+    return admin
+
+
+def atualizar_perfil(db: Session, perfil_id: UUID, dados: PerfilAdminUpdate) -> Perfil:
+    perfil = buscar_perfil(db, perfil_id)
+    for campo, valor in dados.model_dump(exclude_unset=True).items():
+        setattr(perfil, campo, valor)
+    _commit(db)
+    db.refresh(perfil)
+    return perfil
+
+
+def alterar_status(db: Session, perfil_id: UUID, novo_status: StatusConta) -> Perfil:
+    perfil = buscar_perfil(db, perfil_id)
+    perfil.status = novo_status
+    _commit(db)
+    db.refresh(perfil)
+    return perfil
+
+
+def remover_perfil(db: Session, perfil_id: UUID) -> None:
+    perfil = buscar_perfil(db, perfil_id)
+
+    if perfil.tipo == TipoPerfil.ADMIN:
+        total = db.scalar(
+            select(func.count()).select_from(Perfil).where(Perfil.tipo == TipoPerfil.ADMIN)
+        )
+        if total <= 1:
+            raise AcaoNaoPermitida("Não é possível remover o último admin")
+
+    try:
+        db.delete(perfil)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise AcaoNaoPermitida(
+            "Não foi possível remover: existem dados vinculados a este perfil"
+        )

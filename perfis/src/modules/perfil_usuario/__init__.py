@@ -3,7 +3,7 @@ from .perfil import Perfil, StatusConta, TipoPerfil
 from .cliente import Cliente
 from .admin import Admin
 from .loja import CategoriaLoja, Loja, StatusFuncionamento
-from .entregador import Entregador, TipoVeiculo
+from .entregador import Entregador, StatusEntregador, TipoVeiculo
 from .endereco import Endereco
 
 __all__ = [
@@ -17,5 +17,6 @@ __all__ = [
     "StatusFuncionamento",
     "Entregador",
     "TipoVeiculo",
+    "StatusEntregador",
     "Endereco",
 ]

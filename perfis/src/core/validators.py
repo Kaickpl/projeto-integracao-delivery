@@ -32,3 +32,15 @@ def cnpj_valido(cnpj: str) -> bool:
 
 def documento_valido(documento: str) -> bool:
     return cpf_valido(documento) or cnpj_valido(documento)
+
+
+def limpar_placa(valor: str) -> str:
+    return re.sub(r"[-\s]", "", valor).upper()
+
+
+def placa_valida(placa: str) -> bool:
+    return re.fullmatch(r"[A-Z]{3}[0-9][A-Z0-9][0-9]{2}", placa) is not None
+
+
+def cnh_valida(cnh: str) -> bool:
+    return re.fullmatch(r"[0-9]{11}", cnh) is not None

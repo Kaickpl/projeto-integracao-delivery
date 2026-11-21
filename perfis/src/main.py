@@ -5,9 +5,10 @@ from sqlalchemy.orm import Session
 
 from src.api.router import api_router
 from src.core.database import get_db
-from src.modules.admin.service import (
+from src.core.exceptions import (
     AcaoNaoPermitida,
     DadoDuplicado,
+    DadosInvalidos,
     PerfilNaoEncontrado,
 )
 
@@ -17,19 +18,24 @@ app.include_router(api_router)
 
 @app.exception_handler(PerfilNaoEncontrado)
 async def perfil_nao_encontrado(request: Request, exc: PerfilNaoEncontrado):
-    return JSONResponse(status_code=404, content={"detail": "Perfil não encontrado"})
+    return JSONResponse(status_code=404, content={"detail": exc.mensagem})
 
 
 @app.exception_handler(DadoDuplicado)
 async def dado_duplicado(request: Request, exc: DadoDuplicado):
     return JSONResponse(
-        status_code=409, content={"detail": "CPF/CNPJ ou e-mail já cadastrado"}
+        status_code=409, content={"detail": "CPF/CNPJ, e-mail ou placa já cadastrado"}
     )
 
 
 @app.exception_handler(AcaoNaoPermitida)
 async def acao_nao_permitida(request: Request, exc: AcaoNaoPermitida):
     return JSONResponse(status_code=409, content={"detail": exc.mensagem})
+
+
+@app.exception_handler(DadosInvalidos)
+async def dados_invalidos(request: Request, exc: DadosInvalidos):
+    return JSONResponse(status_code=422, content={"detail": exc.mensagem})
 
 
 @app.get("/health/db")

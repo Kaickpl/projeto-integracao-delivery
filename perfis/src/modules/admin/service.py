@@ -4,22 +4,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src.core.exceptions import AcaoNaoPermitida, DadoDuplicado, PerfilNaoEncontrado
 from src.modules.admin.schemas import AdminCreate, PerfilAdminUpdate
 from src.modules.perfil_usuario.admin import Admin
 from src.modules.perfil_usuario.perfil import Perfil, StatusConta, TipoPerfil
-
-
-class PerfilNaoEncontrado(Exception):
-    pass
-
-
-class DadoDuplicado(Exception):
-    pass
-
-
-class AcaoNaoPermitida(Exception):
-    def __init__(self, mensagem: str):
-        self.mensagem = mensagem
 
 
 def _commit(db: Session) -> None:

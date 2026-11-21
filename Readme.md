@@ -203,6 +203,8 @@ uvicorn src.main:app --reload
 
 ## Variáveis de ambiente
 
+Para o serviço de Autenticação, consulte o [guia de configuração, migrações e testes do Auth](autenticacao/README.md).
+
 Crie um arquivo `.env` na raiz de cada serviço (nunca versionar):
 
 ```env

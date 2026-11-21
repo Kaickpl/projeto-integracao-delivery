@@ -30,6 +30,13 @@ class Entregador(Perfil):
     )
     placa: Mapped[str | None] = mapped_column(String(7),unique=True)
     cnh: Mapped[str | None] = mapped_column(String(11))
+    # Não é o `status` de Perfil (situação da conta): diz se o entregador
+    # está recebendo entregas agora. Começa INATIVO (offline).
+    status_entregador: Mapped[StatusEntregador] = mapped_column(
+        Enum(StatusEntregador, name="status_entregador"),
+        default=StatusEntregador.INATIVO,
+        server_default=StatusEntregador.INATIVO.value,
+    )
 
     __table_args__ = (
         CheckConstraint(

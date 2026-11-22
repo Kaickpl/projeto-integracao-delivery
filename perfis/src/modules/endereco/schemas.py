@@ -87,3 +87,17 @@ class EnderecoResponse(BaseModel):
     cidade: str
     uf: str
     referencia: str | None
+
+
+class CepResponse(BaseModel):
+    """Endereço achado pelo CEP, para preencher o formulário.
+
+    Número e complemento ficam com o usuário. Em cidades com CEP único,
+    logradouro e bairro vêm vazios (null) e também precisam ser digitados.
+    """
+
+    cep: str
+    logradouro: str | None
+    bairro: str | None
+    cidade: str
+    uf: str

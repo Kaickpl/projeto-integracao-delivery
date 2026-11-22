@@ -27,3 +27,15 @@ class DadosInvalidos(Exception):
     def __init__(self, mensagem: str):
         super().__init__(mensagem)
         self.mensagem = mensagem
+
+
+class CepNaoEncontrado(Exception):
+    def __init__(self, mensagem: str = "CEP não encontrado"):
+        super().__init__(mensagem)
+        self.mensagem = mensagem
+
+
+class ServicoIndisponivel(Exception):
+    def __init__(self, mensagem: str):
+        super().__init__(mensagem)
+        self.mensagem = mensagem

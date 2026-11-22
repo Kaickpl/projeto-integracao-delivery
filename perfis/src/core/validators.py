@@ -44,3 +44,22 @@ def placa_valida(placa: str) -> bool:
 
 def cnh_valida(cnh: str) -> bool:
     return re.fullmatch(r"[0-9]{11}", cnh) is not None
+
+
+UFS = frozenset({
+    "AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG",
+    "PA", "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE",
+    "TO",
+})
+
+
+def limpar_cep(valor: str) -> str:
+    return re.sub(r"[.\-\s]", "", valor)
+
+
+def cep_valido(cep: str) -> bool:
+    return re.fullmatch(r"[0-9]{8}", cep) is not None
+
+
+def uf_valida(uf: str) -> bool:
+    return uf in UFS

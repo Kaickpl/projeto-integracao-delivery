@@ -23,9 +23,7 @@ async def perfil_nao_encontrado(request: Request, exc: PerfilNaoEncontrado):
 
 @app.exception_handler(DadoDuplicado)
 async def dado_duplicado(request: Request, exc: DadoDuplicado):
-    return JSONResponse(
-        status_code=409, content={"detail": "CPF/CNPJ, e-mail ou placa já cadastrado"}
-    )
+    return JSONResponse(status_code=409, content={"detail": exc.mensagem})
 
 
 @app.exception_handler(AcaoNaoPermitida)

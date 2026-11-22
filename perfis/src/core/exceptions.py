@@ -12,7 +12,9 @@ class PerfilNaoEncontrado(Exception):
 
 
 class DadoDuplicado(Exception):
-    pass
+    def __init__(self, mensagem: str = "CPF/CNPJ, e-mail ou placa já cadastrado"):
+        super().__init__(mensagem)
+        self.mensagem = mensagem
 
 
 class AcaoNaoPermitida(Exception):

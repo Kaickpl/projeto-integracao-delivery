@@ -1,41 +1,45 @@
 """Erros de negócio compartilhados pelos módulos.
 
 Os services levantam estas exceções e o `main.py` converte cada uma na
-resposta HTTP certa, para que nenhum service precise lidar com HTTP.
+resposta HTTP certa, para que nenhum service precise lidar com HTTP. Cada
+erro diz o próprio código HTTP e tem uma mensagem padrão.
 """
 
 
-class PerfilNaoEncontrado(Exception):
-    def __init__(self, mensagem: str = "Perfil não encontrado"):
-        super().__init__(mensagem)
-        self.mensagem = mensagem
+class ErroDeNegocio(Exception):
+    status_code: int = 400
+    mensagem_padrao: str = "Requisição inválida"
+
+    def __init__(self, mensagem: str | None = None):
+        self.mensagem = mensagem or self.mensagem_padrao
+        super().__init__(self.mensagem)
 
 
-class DadoDuplicado(Exception):
-    def __init__(self, mensagem: str = "CPF/CNPJ, e-mail ou placa já cadastrado"):
-        super().__init__(mensagem)
-        self.mensagem = mensagem
+class PerfilNaoEncontrado(ErroDeNegocio):
+    status_code = 404
+    mensagem_padrao = "Perfil não encontrado"
 
 
-class AcaoNaoPermitida(Exception):
-    def __init__(self, mensagem: str):
-        super().__init__(mensagem)
-        self.mensagem = mensagem
+class DadoDuplicado(ErroDeNegocio):
+    status_code = 409
+    mensagem_padrao = "CPF/CNPJ, e-mail ou placa já cadastrado"
 
 
-class DadosInvalidos(Exception):
-    def __init__(self, mensagem: str):
-        super().__init__(mensagem)
-        self.mensagem = mensagem
+class AcaoNaoPermitida(ErroDeNegocio):
+    status_code = 409
+    mensagem_padrao = "Ação não permitida"
 
 
-class CepNaoEncontrado(Exception):
-    def __init__(self, mensagem: str = "CEP não encontrado"):
-        super().__init__(mensagem)
-        self.mensagem = mensagem
+class DadosInvalidos(ErroDeNegocio):
+    status_code = 422
+    mensagem_padrao = "Dados inválidos"
 
 
-class ServicoIndisponivel(Exception):
-    def __init__(self, mensagem: str):
-        super().__init__(mensagem)
-        self.mensagem = mensagem
+class CepNaoEncontrado(ErroDeNegocio):
+    status_code = 404
+    mensagem_padrao = "CEP não encontrado"
+
+
+class ServicoIndisponivel(ErroDeNegocio):
+    status_code = 503
+    mensagem_padrao = "Serviço indisponível no momento"

@@ -12,7 +12,9 @@ class PerfilNaoEncontrado(Exception):
 
 
 class DadoDuplicado(Exception):
-    pass
+    def __init__(self, mensagem: str = "CPF/CNPJ, e-mail ou placa já cadastrado"):
+        super().__init__(mensagem)
+        self.mensagem = mensagem
 
 
 class AcaoNaoPermitida(Exception):
@@ -22,6 +24,18 @@ class AcaoNaoPermitida(Exception):
 
 
 class DadosInvalidos(Exception):
+    def __init__(self, mensagem: str):
+        super().__init__(mensagem)
+        self.mensagem = mensagem
+
+
+class CepNaoEncontrado(Exception):
+    def __init__(self, mensagem: str = "CEP não encontrado"):
+        super().__init__(mensagem)
+        self.mensagem = mensagem
+
+
+class ServicoIndisponivel(Exception):
     def __init__(self, mensagem: str):
         super().__init__(mensagem)
         self.mensagem = mensagem

@@ -68,7 +68,6 @@ def atualizar_entregador(
     entregador = buscar_entregador(db, entregador_id)
     alteracoes = dados.model_dump(exclude_unset=True)
 
-    # Confere o veículo como ele vai ficar depois da alteração.
     if faltam_documentos_do_veiculo(
         alteracoes.get("tipo_veiculo", entregador.tipo_veiculo),
         alteracoes.get("placa", entregador.placa),
@@ -87,7 +86,6 @@ def alterar_status_entregador(
     db: Session, entregador_id: UUID, novo_status: StatusEntregador
 ) -> Entregador:
     entregador = buscar_entregador(db, entregador_id)
-    # Conta pendente ou suspensa não pode receber entregas.
     if novo_status != StatusEntregador.INATIVO and entregador.status != StatusConta.ATIVO:
         raise AcaoNaoPermitida(
             "Só entregadores com a conta ativa podem ficar disponíveis ou ocupados"

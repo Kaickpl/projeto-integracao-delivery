@@ -40,12 +40,6 @@ class StatusFuncionamento(str, enum.Enum):
 
 
 class Loja(Perfil):
-    """Perfil da loja (restaurante).
-
-    `nome` e `telefone` vêm de Perfil. O endereço é obrigatório e fica na
-    tabela `enderecos`, ligado por `endereco_id`. Os horários de
-    funcionamento são cadastrados à parte.
-    """
 
     __tablename__ = "lojas"
 
@@ -58,27 +52,22 @@ class Loja(Perfil):
     categoria: Mapped[CategoriaLoja] = mapped_column(
         Enum(CategoriaLoja, name="categoria_loja")
     )
-    # Em centavos (R$ 5,90 -> 590), como no padrão da turma.
     taxa_entrega: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")
     )
-    # Em minutos.
     tempo_estimado_min: Mapped[int | None] = mapped_column(Integer)
     tempo_estimado_max: Mapped[int | None] = mapped_column(Integer)
-    # Não é o `status` de Perfil (situação da conta): diz se a loja está
-    # recebendo pedidos agora.
+
     status_funcionamento: Mapped[StatusFuncionamento] = mapped_column(
         Enum(StatusFuncionamento, name="status_funcionamento"),
         default=StatusFuncionamento.FECHADO,
         server_default=StatusFuncionamento.FECHADO.value,
     )
-    # Obrigatório. O banco não deixa apagar um endereço que uma loja usa.
     endereco_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("enderecos.id", ondelete="RESTRICT", name="fk_lojas_endereco")
     )
 
-    # Exatamente um endereço por loja. Apagar a loja (pelo SQLAlchemy) apaga
-    # o endereço dela junto.
+
     endereco: Mapped[Endereco] = relationship(
         back_populates="loja",
         cascade="all, delete-orphan",

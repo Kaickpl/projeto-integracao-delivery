@@ -1,4 +1,3 @@
-"""Schemas de endereço, usados por quem tem endereço (loja e, depois, cliente)."""
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -45,7 +44,6 @@ class EnderecoCreate(BaseModel):
 
 
 class EnderecoUpdate(BaseModel):
-    """Só os campos enviados são alterados."""
 
     cep: str | None = None
     logradouro: str | None = Field(default=None, min_length=2, max_length=150)
@@ -60,7 +58,6 @@ class EnderecoUpdate(BaseModel):
     @field_validator("cep", "logradouro", "numero", "bairro", "cidade", "uf")
     @classmethod
     def nao_pode_ser_nulo(cls, v):
-        # Só roda para campos enviados: omitir pode, mandar null não.
         if v is None:
             raise ValueError("Não pode ser nulo")
         return v

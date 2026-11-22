@@ -23,8 +23,6 @@ from src.modules.perfil_usuario.perfil import StatusConta
 
 
 def _salvar(db: Session, loja: Loja) -> Loja:
-    # As colunas da loja ficam em `lojas`, mas `atualizado_em` fica em
-    # `perfis`; sem isso ele não muda quando só a parte da loja é alterada.
     loja.atualizado_em = func.now()
     try:
         db.commit()
@@ -36,7 +34,6 @@ def _salvar(db: Session, loja: Loja) -> Loja:
 
 
 def cadastrar_loja(db: Session, dados: LojaCreate) -> Loja:
-    # A conta começa aguardando a aprovação do admin e a loja começa fechada.
     loja = Loja(
         **dados.model_dump(exclude={"endereco"}),
         endereco=Endereco(**dados.endereco.model_dump()),
@@ -48,7 +45,6 @@ def cadastrar_loja(db: Session, dados: LojaCreate) -> Loja:
 
 
 def buscar_loja(db: Session, loja_id: UUID) -> Loja:
-    # Se o id for de outro tipo de perfil (cliente, entregador...), volta None.
     loja = db.get(Loja, loja_id)
     if loja is None:
         raise PerfilNaoEncontrado("Loja não encontrada")
@@ -63,10 +59,7 @@ def buscar_lojas(
     skip: int = 0,
     limit: int = 50,
 ) -> list[Loja]:
-    """Busca feita pelo cliente: só aparecem lojas com a conta ativa.
 
-    As abertas vêm primeiro; depois, ordem alfabética.
-    """
     stmt = (
         select(Loja)
         .options(selectinload(Loja.endereco))
@@ -134,7 +127,6 @@ def remover_loja(db: Session, loja_id: UUID) -> None:
         raise AcaoNaoPermitida("Feche a loja antes de apagar a conta")
 
     try:
-        # O endereço da loja é apagado junto (cascade do relacionamento).
         db.delete(loja)
         db.commit()
     except IntegrityError:

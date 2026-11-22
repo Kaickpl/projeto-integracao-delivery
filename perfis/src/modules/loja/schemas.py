@@ -94,7 +94,6 @@ class LojaPerfilUpdate(BaseModel):
     @field_validator("nome", "email", "telefone", "razao_social")
     @classmethod
     def nao_pode_ser_nulo(cls, v):
-        # Só roda para campos enviados: omitir pode, mandar null não.
         if v is None:
             raise ValueError("Não pode ser nulo")
         return v
@@ -103,7 +102,6 @@ class LojaPerfilUpdate(BaseModel):
 class LojaInformacoesUpdate(BaseModel):
     """Edição das informações que o cliente vê. Só os campos enviados são alterados."""
 
-    # Podem ser enviados como null para apagar.
     descricao: str | None = Field(default=None, max_length=500)
     url_imagem: str | None = Field(default=None, max_length=500)
     tempo_estimado_min: int | None = Field(default=None, gt=0, description="Em minutos")

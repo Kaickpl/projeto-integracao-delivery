@@ -1,138 +1,89 @@
-from datetime import datetime
 from uuid import UUID
 
-from pydantic import (
-    BaseModel,
-    ConfigDict,
-    EmailStr,
-    Field,
-    field_validator,
-    model_validator,
-)
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session
 
-from src.core.validators import (
-    cnh_valida,
-    cpf_valido,
-    limpar_documento,
-    limpar_placa,
-    placa_valida,
-)
-from src.modules.perfil_usuario.entregador import StatusEntregador, TipoVeiculo
-from src.modules.perfil_usuario.perfil import StatusConta
-
-MENSAGEM_VEICULO_SEM_DOCUMENTOS = "Moto e carro exigem placa e CNH"
+from src.core.database import salvar_alteracoes
+from src.core.exceptions import AcaoNaoPermitida, DadosInvalidos, PerfilNaoEncontrado
+from src.modules.admin.schemas import AdminCreate, PerfilAdminUpdate
+from src.modules.perfil_usuario.admin import Admin
+from src.modules.perfil_usuario.entregador import Entregador, StatusEntregador
+from src.modules.perfil_usuario.loja import Loja, StatusFuncionamento
+from src.modules.perfil_usuario.perfil import Perfil, StatusConta, TipoPerfil
 
 
-def faltam_documentos_do_veiculo(
-    tipo_veiculo: TipoVeiculo, placa: str | None, cnh: str | None
-) -> bool:
-    """Mesma regra do banco: só bicicleta pode ficar sem placa e CNH."""
-    return tipo_veiculo != TipoVeiculo.BICICLETA and (placa is None or cnh is None)
+def buscar_perfil(db: Session, perfil_id: UUID) -> Perfil:
+    perfil = db.get(Perfil, perfil_id)
+    if perfil is None:
+        raise PerfilNaoEncontrado()
+    return perfil
 
 
-def _validar_placa(v: str | None) -> str | None:
-    if v is None:
-        return None
-    placa = limpar_placa(v)
-    if not placa_valida(placa):
-        raise ValueError("Placa inválida (use ABC1234 ou ABC1D23)")
-    return placa
+def listar_perfis(
+    db: Session,
+    tipo: TipoPerfil | None = None,
+    status: StatusConta | None = None,
+    skip: int = 0,
+    limit: int = 50,
+) -> list[Perfil]:
+    stmt = select(Perfil).order_by(Perfil.criado_em).offset(skip).limit(limit)
+    if tipo:
+        stmt = stmt.where(Perfil.tipo == tipo)
+    if status:
+        stmt = stmt.where(Perfil.status == status)
+    return list(db.scalars(stmt))
 
 
-def _validar_cnh(v: str | None) -> str | None:
-    if v is None:
-        return None
-    cnh = limpar_documento(v)
-    if not cnh_valida(cnh):
-        raise ValueError("CNH deve ter 11 dígitos")
-    return cnh
+def criar_admin(db: Session, dados: AdminCreate) -> Perfil:
+    admin = Admin(**dados.model_dump(), status=StatusConta.ATIVO)
+    db.add(admin)
+    salvar_alteracoes(db)
+    db.refresh(admin)
+    return admin
 
 
-class EntregadorCreate(BaseModel):
-    nome: str = Field(min_length=2, max_length=150)
-    cpf_cnpj: str
-    email: EmailStr
-    senha: str = Field(min_length=6, max_length=30)
-    telefone: str = Field(min_length=8, max_length=20)
-    tipo_veiculo: TipoVeiculo
-    placa: str | None = None
-    cnh: str | None = None
-
-    @field_validator("cpf_cnpj")
-    @classmethod
-    def validar_cpf(cls, v: str) -> str:
-        # Entregador é pessoa física: só aceita CPF.
-        cpf = limpar_documento(v)
-        if not cpf_valido(cpf):
-            raise ValueError("CPF inválido")
-        return cpf
-
-    @field_validator("placa")
-    @classmethod
-    def validar_placa(cls, v: str | None) -> str | None:
-        return _validar_placa(v)
-
-    @field_validator("cnh")
-    @classmethod
-    def validar_cnh(cls, v: str | None) -> str | None:
-        return _validar_cnh(v)
-
-    @model_validator(mode="after")
-    def validar_veiculo(self):
-        if faltam_documentos_do_veiculo(self.tipo_veiculo, self.placa, self.cnh):
-            raise ValueError(MENSAGEM_VEICULO_SEM_DOCUMENTOS)
-        return self
+def atualizar_perfil(db: Session, perfil_id: UUID, dados: PerfilAdminUpdate) -> Perfil:
+    perfil = buscar_perfil(db, perfil_id)
+    alteracoes = dados.model_dump(exclude_unset=True)
+    if "data_nascimento" in alteracoes and isinstance(perfil, Loja):
+        raise DadosInvalidos("Loja não tem data de nascimento")
+    for campo, valor in alteracoes.items():
+        setattr(perfil, campo, valor)
+    salvar_alteracoes(db)
+    db.refresh(perfil)
+    return perfil
 
 
-class EntregadorUpdate(BaseModel):
-    """Edição do perfil. Só os campos enviados são alterados.
+def alterar_status(db: Session, perfil_id: UUID, novo_status: StatusConta) -> Perfil:
+    perfil = buscar_perfil(db, perfil_id)
+    perfil.status = novo_status
 
-    CPF, senha e os status não mudam por aqui.
-    """
-
-    nome: str | None = Field(default=None, min_length=2, max_length=150)
-    email: EmailStr | None = None
-    telefone: str | None = Field(default=None, min_length=8, max_length=20)
-    tipo_veiculo: TipoVeiculo | None = None
-    # Podem ser enviados como null para apagar (só se o veículo for bicicleta).
-    placa: str | None = None
-    cnh: str | None = None
-
-    @field_validator("nome", "email", "telefone", "tipo_veiculo")
-    @classmethod
-    def nao_pode_ser_nulo(cls, v):
-        # Só roda para campos enviados: omitir pode, mandar null não.
-        if v is None:
-            raise ValueError("Não pode ser nulo")
-        return v
-
-    @field_validator("placa")
-    @classmethod
-    def validar_placa(cls, v: str | None) -> str | None:
-        return _validar_placa(v)
-
-    @field_validator("cnh")
-    @classmethod
-    def validar_cnh(cls, v: str | None) -> str | None:
-        return _validar_cnh(v)
+    if novo_status != StatusConta.ATIVO:
+        if isinstance(perfil, Loja):
+            perfil.status_funcionamento = StatusFuncionamento.FECHADO
+        elif isinstance(perfil, Entregador):
+            perfil.status_entregador = StatusEntregador.INATIVO
+    salvar_alteracoes(db)
+    db.refresh(perfil)
+    return perfil
 
 
-class StatusEntregadorUpdate(BaseModel):
-    status_entregador: StatusEntregador
+def remover_perfil(db: Session, perfil_id: UUID) -> None:
+    perfil = buscar_perfil(db, perfil_id)
 
+    if perfil.tipo == TipoPerfil.ADMIN:
+        total = db.scalar(
+            select(func.count()).select_from(Perfil).where(Perfil.tipo == TipoPerfil.ADMIN)
+        )
+        if total <= 1:
+            raise AcaoNaoPermitida("Não é possível remover o último admin")
 
-class EntregadorResponse(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    id: UUID
-    nome: str
-    cpf_cnpj: str
-    email: EmailStr
-    telefone: str
-    status: StatusConta
-    tipo_veiculo: TipoVeiculo
-    placa: str | None
-    cnh: str | None
-    status_entregador: StatusEntregador
-    criado_em: datetime
-    atualizado_em: datetime
+    try:
+        db.delete(perfil)
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise AcaoNaoPermitida(
+            "Não foi possível remover: existem dados vinculados a este perfil"
+        )

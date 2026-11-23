@@ -4,9 +4,9 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from src.core.database import salvar_alteracoes
 from src.core.exceptions import (
     AcaoNaoPermitida,
-    DadoDuplicado,
     DadosInvalidos,
     PerfilNaoEncontrado,
 )
@@ -20,14 +20,6 @@ from src.modules.perfil_usuario.entregador import Entregador, StatusEntregador
 from src.modules.perfil_usuario.perfil import StatusConta
 
 
-def _commit(db: Session) -> None:
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise DadoDuplicado()
-
-
 def cadastrar_entregador(db: Session, dados: EntregadorCreate) -> Entregador:
     # A conta começa aguardando a aprovação do admin e o entregador começa
     # offline.
@@ -37,7 +29,7 @@ def cadastrar_entregador(db: Session, dados: EntregadorCreate) -> Entregador:
         status_entregador=StatusEntregador.INATIVO,
     )
     db.add(entregador)
-    _commit(db)
+    salvar_alteracoes(db)
     db.refresh(entregador)
     return entregador
 
@@ -78,7 +70,7 @@ def atualizar_entregador(
 
     for campo, valor in alteracoes.items():
         setattr(entregador, campo, valor)
-    _commit(db)
+    salvar_alteracoes(db)
     db.refresh(entregador)
     return entregador
 
@@ -93,7 +85,7 @@ def alterar_status_entregador(
             "Só entregadores com a conta ativa podem ficar disponíveis ou ocupados"
         )
     entregador.status_entregador = novo_status
-    _commit(db)
+    salvar_alteracoes(db)
     db.refresh(entregador)
     return entregador
 

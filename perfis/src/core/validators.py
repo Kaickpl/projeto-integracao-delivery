@@ -1,4 +1,8 @@
 import re
+from datetime import date
+from typing import Annotated
+
+from pydantic import AfterValidator, Field
 
 
 def limpar_documento(valor: str) -> str:
@@ -63,3 +67,36 @@ def cep_valido(cep: str) -> bool:
 
 def uf_valida(uf: str) -> bool:
     return uf in UFS
+
+
+IDADE_MINIMA = 18
+IDADE_MAXIMA = 120
+
+
+def calcular_idade(nascimento: date, hoje: date | None = None) -> int:
+    """Anos completos na data de hoje.
+
+    Quem nasceu em 29/02 completa ano em 01/03 nos anos que não são bissextos.
+    """
+    hoje = hoje or date.today()
+    ja_fez_aniversario = (hoje.month, hoje.day) >= (nascimento.month, nascimento.day)
+    return hoje.year - nascimento.year - (0 if ja_fez_aniversario else 1)
+
+
+def validar_maioridade(nascimento: date) -> date:
+    if nascimento > date.today():
+        raise ValueError("Data de nascimento no futuro")
+    idade = calcular_idade(nascimento)
+    if idade > IDADE_MAXIMA:
+        raise ValueError("Data de nascimento inválida")
+    if idade < IDADE_MINIMA:
+        raise ValueError(f"É preciso ter pelo menos {IDADE_MINIMA} anos para se cadastrar")
+    return nascimento
+
+
+# Campo dos schemas de cadastro: data no formato AAAA-MM-DD, 18 anos ou mais.
+DataNascimento = Annotated[
+    date,
+    AfterValidator(validar_maioridade),
+    Field(description="AAAA-MM-DD. Precisa ter 18 anos ou mais", examples=["1995-08-20"]),
+]

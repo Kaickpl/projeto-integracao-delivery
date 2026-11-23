@@ -13,6 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .endereco import Endereco
+from .horario_funcionamento import HorarioFuncionamento
 from .perfil import Perfil, TipoPerfil
 
 
@@ -40,6 +41,12 @@ class StatusFuncionamento(str, enum.Enum):
 
 
 class Loja(Perfil):
+    """Perfil da loja (restaurante).
+
+    `nome` e `telefone` vêm de Perfil. O endereço é obrigatório e fica na
+    tabela `enderecos`, ligado por `endereco_id`. Os horários de
+    funcionamento ficam em `horarios_funcionamento`.
+    """
 
     __tablename__ = "lojas"
 
@@ -52,32 +59,50 @@ class Loja(Perfil):
     categoria: Mapped[CategoriaLoja] = mapped_column(
         Enum(CategoriaLoja, name="categoria_loja")
     )
+    # Em centavos (R$ 5,90 -> 590), como no padrão da turma.
     taxa_entrega: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")
     )
+    # Também em centavos. 0 = sem pedido mínimo.
+    valor_minimo_pedido: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
+    # Em minutos.
     tempo_estimado_min: Mapped[int | None] = mapped_column(Integer)
     tempo_estimado_max: Mapped[int | None] = mapped_column(Integer)
-
+    # Não é o `status` de Perfil (situação da conta): diz se a loja está
+    # recebendo pedidos agora.
     status_funcionamento: Mapped[StatusFuncionamento] = mapped_column(
         Enum(StatusFuncionamento, name="status_funcionamento"),
         default=StatusFuncionamento.FECHADO,
         server_default=StatusFuncionamento.FECHADO.value,
     )
+    # Obrigatório. O banco não deixa apagar um endereço que uma loja usa.
     endereco_id: Mapped[uuid.UUID] = mapped_column(
         ForeignKey("enderecos.id", ondelete="RESTRICT", name="fk_lojas_endereco")
     )
 
-
+    # Exatamente um endereço por loja. Apagar a loja (pelo SQLAlchemy) apaga
+    # o endereço dela junto.
     endereco: Mapped[Endereco] = relationship(
         back_populates="loja",
         cascade="all, delete-orphan",
         single_parent=True,
     )
 
+    # Apagar a loja apaga os horários dela junto.
+    horarios: Mapped[list[HorarioFuncionamento]] = relationship(
+        cascade="all, delete-orphan",
+        order_by=(HorarioFuncionamento.dia_semana, HorarioFuncionamento.abre),
+    )
+
     __table_args__ = (
         # Um endereço pertence a uma loja só.
         UniqueConstraint("endereco_id", name="uq_lojas_endereco_id"),
         CheckConstraint("taxa_entrega >= 0", name="ck_loja_taxa_entrega_nao_negativa"),
+        CheckConstraint(
+            "valor_minimo_pedido >= 0", name="ck_loja_valor_minimo_pedido_nao_negativo"
+        ),
         CheckConstraint(
             "tempo_estimado_min > 0 AND tempo_estimado_max > 0",
             name="ck_loja_tempo_estimado_positivo",

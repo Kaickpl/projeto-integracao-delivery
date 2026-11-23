@@ -4,31 +4,29 @@ from sqlalchemy import case, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
+from src.core.database import salvar_alteracoes
 from src.core.exceptions import (
     AcaoNaoPermitida,
-    DadoDuplicado,
     DadosInvalidos,
     PerfilNaoEncontrado,
 )
 from src.modules.loja.schemas import (
     MENSAGEM_TEMPO_ESTIMADO,
+    HorariosUpdate,
     LojaCreate,
     LojaInformacoesUpdate,
     LojaPerfilUpdate,
     tempo_estimado_invalido,
 )
 from src.modules.perfil_usuario.endereco import Endereco
+from src.modules.perfil_usuario.horario_funcionamento import HorarioFuncionamento
 from src.modules.perfil_usuario.loja import CategoriaLoja, Loja, StatusFuncionamento
 from src.modules.perfil_usuario.perfil import StatusConta
 
 
 def _salvar(db: Session, loja: Loja) -> Loja:
     loja.atualizado_em = func.now()
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise DadoDuplicado("CNPJ ou e-mail já cadastrado")
+    salvar_alteracoes(db)
     db.refresh(loja)
     return loja
 
@@ -56,6 +54,8 @@ def buscar_lojas(
     nome: str | None = None,
     categoria: CategoriaLoja | None = None,
     status_funcionamento: StatusFuncionamento | None = None,
+    cidade: str | None = None,
+    bairro: str | None = None,
     skip: int = 0,
     limit: int = 50,
 ) -> list[Loja]:
@@ -79,6 +79,12 @@ def buscar_lojas(
         stmt = stmt.where(Loja.categoria == categoria)
     if status_funcionamento:
         stmt = stmt.where(Loja.status_funcionamento == status_funcionamento)
+    if cidade or bairro:
+        stmt = stmt.join(Loja.endereco)
+        if cidade:
+            stmt = stmt.where(Endereco.cidade.icontains(cidade, autoescape=True))
+        if bairro:
+            stmt = stmt.where(Endereco.bairro.icontains(bairro, autoescape=True))
     return list(db.scalars(stmt))
 
 
@@ -110,11 +116,27 @@ def atualizar_informacoes(
     return _salvar(db, loja)
 
 
+def listar_horarios(db: Session, loja_id: UUID) -> list[HorarioFuncionamento]:
+    return buscar_loja(db, loja_id).horarios
+
+
+def definir_horarios(
+    db: Session, loja_id: UUID, dados: HorariosUpdate
+) -> list[HorarioFuncionamento]:
+    loja = buscar_loja(db, loja_id)
+    loja.horarios.clear()
+    db.flush()
+    loja.horarios.extend(
+        HorarioFuncionamento(**horario.model_dump()) for horario in dados.horarios
+    )
+    _salvar(db, loja)
+    return loja.horarios
+
+
 def alterar_status_funcionamento(
     db: Session, loja_id: UUID, novo_status: StatusFuncionamento
 ) -> Loja:
     loja = buscar_loja(db, loja_id)
-    # Conta pendente ou suspensa não pode receber pedidos.
     if novo_status == StatusFuncionamento.ABERTO and loja.status != StatusConta.ATIVO:
         raise AcaoNaoPermitida("Só lojas com a conta ativa podem abrir")
     loja.status_funcionamento = novo_status

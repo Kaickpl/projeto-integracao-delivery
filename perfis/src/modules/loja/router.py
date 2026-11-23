@@ -6,6 +6,8 @@ from sqlalchemy.orm import Session
 from src.core.database import get_db
 from src.modules.loja import service
 from src.modules.loja.schemas import (
+    Horario,
+    HorariosUpdate,
     LojaCreate,
     LojaInformacoesUpdate,
     LojaPerfilUpdate,
@@ -29,6 +31,8 @@ def buscar_lojas(
     ),
     categoria: CategoriaLoja | None = None,
     status_funcionamento: StatusFuncionamento | None = None,
+    cidade: str | None = Query(None, min_length=1, max_length=100),
+    bairro: str | None = Query(None, min_length=1, max_length=100),
     skip: int = Query(0, ge=0),
     limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(get_db),
@@ -38,7 +42,9 @@ def buscar_lojas(
     Só aparecem lojas com a conta ativa (aprovadas pelo admin). As abertas
     vêm primeiro.
     """
-    return service.buscar_lojas(db, nome, categoria, status_funcionamento, skip, limit)
+    return service.buscar_lojas(
+        db, nome, categoria, status_funcionamento, cidade, bairro, skip, limit
+    )
 
 
 @router.get("/{loja_id}", response_model=LojaResponse)
@@ -60,11 +66,24 @@ def editar_informacoes(
     return service.atualizar_informacoes(db, loja_id, dados)
 
 
+@router.get("/{loja_id}/horarios", response_model=list[Horario])
+def listar_horarios(loja_id: UUID, db: Session = Depends(get_db)):
+    """Horários de funcionamento, por dia da semana."""
+    return service.listar_horarios(db, loja_id)
+
+
+@router.put("/{loja_id}/horarios", response_model=list[Horario])
+def definir_horarios(
+    loja_id: UUID, dados: HorariosUpdate, db: Session = Depends(get_db)
+):
+
+    return service.definir_horarios(db, loja_id, dados)
+
+
 @router.patch("/{loja_id}/status", response_model=LojaResponse)
 def alterar_status_funcionamento(
     loja_id: UUID, dados: StatusFuncionamentoUpdate, db: Session = Depends(get_db)
 ):
-    """Abre, fecha ou deixa a loja indisponível."""
     return service.alterar_status_funcionamento(db, loja_id, dados.status_funcionamento)
 
 

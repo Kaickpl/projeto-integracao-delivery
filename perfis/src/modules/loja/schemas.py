@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, time
 from uuid import UUID
 
 from pydantic import (
@@ -19,6 +19,7 @@ from src.modules.endereco.schemas import (
     EnderecoResponse,
     EnderecoUpdate,
 )
+from src.modules.perfil_usuario.horario_funcionamento import DiaSemana
 from src.modules.perfil_usuario.loja import CategoriaLoja, StatusFuncionamento
 from src.modules.perfil_usuario.perfil import StatusConta
 
@@ -55,6 +56,9 @@ class LojaCreate(BaseModel):
     url_imagem: str | None = Field(default=None, max_length=500)
     categoria: CategoriaLoja
     taxa_entrega: int = Field(default=0, ge=0, description="Em centavos (R$ 5,90 -> 590)")
+    valor_minimo_pedido: int = Field(
+        default=0, ge=0, description="Em centavos. 0 = sem pedido mínimo"
+    )
     tempo_estimado_min: int | None = Field(default=None, gt=0, description="Em minutos")
     tempo_estimado_max: int | None = Field(default=None, gt=0, description="Em minutos")
     endereco: EnderecoCreate
@@ -94,6 +98,7 @@ class LojaPerfilUpdate(BaseModel):
     @field_validator("nome", "email", "telefone", "razao_social")
     @classmethod
     def nao_pode_ser_nulo(cls, v):
+        # Só roda para campos enviados: omitir pode, mandar null não.
         if v is None:
             raise ValueError("Não pode ser nulo")
         return v
@@ -102,6 +107,7 @@ class LojaPerfilUpdate(BaseModel):
 class LojaInformacoesUpdate(BaseModel):
     """Edição das informações que o cliente vê. Só os campos enviados são alterados."""
 
+    # Podem ser enviados como null para apagar.
     descricao: str | None = Field(default=None, max_length=500)
     url_imagem: str | None = Field(default=None, max_length=500)
     tempo_estimado_min: int | None = Field(default=None, gt=0, description="Em minutos")
@@ -111,9 +117,12 @@ class LojaInformacoesUpdate(BaseModel):
     taxa_entrega: int | None = Field(
         default=None, ge=0, description="Em centavos (R$ 5,90 -> 590)"
     )
+    valor_minimo_pedido: int | None = Field(
+        default=None, ge=0, description="Em centavos. 0 = sem pedido mínimo"
+    )
     endereco: EnderecoUpdate | None = None
 
-    @field_validator("categoria", "taxa_entrega", "endereco")
+    @field_validator("categoria", "taxa_entrega", "valor_minimo_pedido", "endereco")
     @classmethod
     def nao_pode_ser_nulo(cls, v):
         if v is None:
@@ -144,9 +153,51 @@ class LojaResponse(BaseModel):
     url_imagem: str | None
     categoria: CategoriaLoja
     taxa_entrega: int
+    valor_minimo_pedido: int
     tempo_estimado_min: int | None
     tempo_estimado_max: int | None
     status_funcionamento: StatusFuncionamento
     endereco: EnderecoResponse
     criado_em: datetime
     atualizado_em: datetime
+
+
+class Horario(BaseModel):
+    """Um intervalo de funcionamento, no horário local da loja."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    dia_semana: DiaSemana
+    abre: time = Field(description="Ex.: 18:00")
+    fecha: time = Field(
+        description="Ex.: 23:00. Se for menor que `abre`, passa da meia-noite"
+    )
+
+    @model_validator(mode="after")
+    def validar_intervalo(self):
+        if self.abre == self.fecha:
+            raise ValueError("O horário de abrir e o de fechar não podem ser iguais")
+        return self
+
+
+def _fim_no_mesmo_dia(horario: Horario) -> time | None:
+    # Intervalo que passa da meia-noite vai até o fim do dia (None = 24:00).
+    return horario.fecha if horario.fecha > horario.abre else None
+
+
+class HorariosUpdate(BaseModel):
+    """Substitui todos os horários da loja. Lista vazia apaga todos."""
+
+    horarios: list[Horario] = Field(max_length=50)
+
+    @model_validator(mode="after")
+    def validar_sobreposicao(self):
+        for dia in DiaSemana:
+            do_dia = sorted(
+                (h for h in self.horarios if h.dia_semana == dia), key=lambda h: h.abre
+            )
+            for anterior, seguinte in zip(do_dia, do_dia[1:]):
+                fim = _fim_no_mesmo_dia(anterior)
+                if fim is None or seguinte.abre < fim:
+                    raise ValueError(f"Há horários sobrepostos em {dia.value}")
+        return self

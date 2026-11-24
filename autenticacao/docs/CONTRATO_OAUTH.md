@@ -1,6 +1,6 @@
 # Contrato OAuth 2.0 e tokens — Identidade
 
-**Estado:** proposta-base interna, pronta para revisão pelas equipes consumidoras. Valores descritos como provisórios precisam ser confirmados antes da integração externa.
+**Estado:** Authorization Code + PKCE, refresh, revogação, introspecção e JWKS estão implementados no Auth. Client Credentials continua pendente; consumidores devem usar apenas os grants publicados nos metadados.
 
 ## Serviços e responsabilidades
 
@@ -18,20 +18,21 @@ Usar Authorization Code com PKCE. O aplicativo redireciona o usuário ao Authori
 
 ### Serviço para serviço
 
-Usar Client Credentials com credencial distinta por serviço consumidor. Segredos de serviço ficam em configuração secreta e nunca são incluídos em tokens de usuário, eventos ou logs.
+O contrato prevê Client Credentials com credencial distinta por serviço consumidor. Essa concessão ainda não está implementada; chamadas internas atuais usam credenciais de serviço dedicadas em configuração secreta. Segredos não são incluídos em tokens de usuário, eventos ou logs.
 
-## Endpoints planejados
+## Endpoints
 
 | Endpoint | Uso |
 | --- | --- |
-| `GET /v1/oauth/autorizar` | Início do Authorization Code + PKCE para usuário interativo. |
-| `POST /v1/oauth/tokens` | Trocar código por tokens; renovar via refresh token; ou emitir token de serviço com Client Credentials. |
-| `POST /v1/oauth/revogar` | Revogar refresh token/sessão; sucesso só depois da persistência da revogação. |
+| `GET /v1/oauth/autorizar` | Início do Authorization Code + PKCE; apresenta a página hospedada no Auth. |
+| `POST /v1/oauth/entrar` | Submissão do formulário hospedado pelo Auth; não é um grant OAuth de senha. |
+| `POST /v1/oauth/tokens` | Trocar código por tokens ou renovar via refresh token, usando formulário OAuth. |
+| `POST /v1/oauth/revogar` | Revogar a família de sessão pelo refresh token; resposta não revela se o token existe. |
 | `POST /v1/oauth/introspeccao` | Consulta autenticada por serviço confiável (Autorização/RBAC) para confirmar `active`, `sub` e `jti`, inclusive estado de revogação. |
 | `GET /.well-known/jwks.json` | Publicar chaves públicas para validar assinaturas. |
 | `GET /.well-known/oauth-authorization-server` | Metadados do Authorization Server, incluindo issuer, endpoints, grant types e `jwks_uri`. |
 
-Os caminhos da API são a proposta de contrato em português. Os caminhos `/.well-known/jwks.json` e `/.well-known/oauth-authorization-server` permanecem conforme os padrões de descoberta. Rotas de escrita usam HTTPS. Clientes OAuth de serviço são autenticados; introspecção não é pública.
+Os caminhos da API são o contrato em português. Os caminhos `/.well-known/jwks.json` e `/.well-known/oauth-authorization-server` permanecem conforme os padrões de descoberta. Rotas de escrita usam HTTPS. Introspecção não é pública. O endpoint de metadados anuncia somente `authorization_code` e `refresh_token`; Client Credentials ainda não está disponível.
 
 ## Access token
 
@@ -53,7 +54,7 @@ Os caminhos da API são a proposta de contrato em português. Os caminhos `/.wel
 
 ## RabbitMQ
 
-Requisições de autorização, token, refresh, revogação e introspecção são síncronas por HTTP, pois o chamador precisa do resultado antes de continuar. RabbitMQ é usado somente para notificações/eventos assíncronos, por exemplo `identity.session.revoked`, depois da persistência autoritativa.
+Requisições de autorização, token, refresh, revogação e introspecção são síncronas por HTTP, pois o chamador precisa do resultado antes de continuar. Este checkout ainda não publica nem consome eventos RabbitMQ. Se a turma contratar o evento opcional `identity.session.revoked`, ele só deve ser publicado depois da persistência autoritativa e nunca pode decidir se a sessão está revogada.
 
 Evento proposto:
 
@@ -83,9 +84,6 @@ Consumidores tratam duplicatas de forma idempotente. Evento não contém senha, 
 
 ## Dependências ainda não implementadas/confirmadas
 
-1. Vitor: login #8 precisa chamar o emissor sem assumir um contrato diferente.
-2. Perfis: endpoint interno INT-01 de consulta de status por `conta_id`; o modelo e as rotas administrativas existem, mas o contrato Auth–Perfis não está exposto.
-3. Perfis: INT-02 precisa usar o UUID comum e parar de persistir senha em `perfis.senha`; o cadastro de cliente também deve ser criado em Perfis.
-4. Autorização/RBAC: INT-03 fornece papel por `conta_id`; INT-05 usa introspecção/validação de revogação antes da decisão de acesso.
-5. Infraestrutura: RabbitMQ, credenciais de serviço, banco compartilhado para sessões e gestão/rotação segura da chave privada RS256.
-6. Equipes consumidoras: confirmar `role`, `aud`, JWKS, endpoint de introspecção e formato de erro antes de depender do contrato em produção.
+1. A concessão Client Credentials e a gestão de clientes/segredos de serviço ainda precisam ser implementadas.
+2. RabbitMQ permanece fora do caminho autoritativo de emissão, renovação e revogação. Publicação de eventos requer contrato da turma.
+3. As equipes consumidoras precisam confirmar `role`, `aud`, JWKS, introspecção e formato de erro antes de depender do contrato em produção.

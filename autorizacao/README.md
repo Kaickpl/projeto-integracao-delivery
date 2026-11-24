@@ -1,0 +1,35 @@
+# Serviço de Autorização e RBAC
+
+O papel de cada conta é a associação autoritativa usada pelo Auth ao emitir ou renovar tokens. As tabelas e o histórico Alembic ficam no schema `autorizacao`, separado dos dados de Perfis e do schema reservado `auth` do Supabase.
+
+## Configuração
+
+Copie `.env.example` para `.env` e configure `DATABASE_URL` com o PostgreSQL de desenvolvimento. Os tokens de serviço devem ser iguais aos configurados nos serviços que fazem as chamadas correspondentes. Não use segredos reais em arquivos versionados, issues ou logs.
+
+## Migrações
+
+Execute a migração uma vez, como etapa de implantação, antes de subir ou escalar as instâncias da API. A aplicação não cria tabelas ao iniciar.
+
+```powershell
+python -m pip install -r requirements.txt
+python -m alembic upgrade head
+python -m alembic current
+```
+
+Para inspecionar o SQL sem conectar:
+
+```powershell
+python -m alembic upgrade head --sql
+```
+
+Em um banco de testes isolado, `upgrade head` cria `autorizacao.papeis_conta` e `autorizacao.alembic_version`. A migração inicial impede valores de papel fora de `CLIENTE`, `LOJA`, `ENTREGADOR` e `ADMIN`, além da validação feita pela API.
+
+## Rotas internas
+
+- `GET /v1/interno/contas/{conta_id}/papel`: consulta autenticada pelo token de serviço do Auth.
+- `PUT /v1/interno/contas/{conta_id}/papel`: associação/atualização autenticada pelo token de serviço de Perfis.
+- `GET /health`: verificação simples de disponibilidade.
+
+## Testes
+
+As verificações ponta a ponta estão em `autenticacao/tests/test_integracao_servicos.py`. Execute-as apenas contra a pilha de integração e banco local isolado descritos em `docs/INTEGRACAO_LOCAL.md`; nunca use o Supabase compartilhado para esses testes.

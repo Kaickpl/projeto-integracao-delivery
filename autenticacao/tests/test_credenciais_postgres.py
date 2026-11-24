@@ -61,7 +61,10 @@ def test_migracao_cria_tabela_e_historico_isolado(banco_migrado):
     with fabrica.begin() as sessao:
         tabelas = inspect(sessao.connection())
         assert set(tabelas.get_table_names(schema=SCHEMA_AUTENTICACAO)) == {
-            "credenciais", "alembic_version"
+            "credenciais",
+            "sessoes_refresh",
+            "codigos_autorizacao",
+            "alembic_version",
         }
         assert not tabelas.get_table_names()
         assert not tabelas.has_schema("auth")

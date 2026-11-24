@@ -8,6 +8,20 @@ from sqlalchemy.exc import ArgumentError
 
 class Settings(BaseSettings):
     DATABASE_URL: SecretStr
+    JWT_PRIVATE_KEY_PATH: Path = Path("./keys/jwt-private.pem")
+    JWT_OLD_PUBLIC_KEYS_DIR: Path = Path("./keys/anteriores")
+    JWT_KEY_ID: str = "identidade-dev-1"
+    JWT_ISSUER: str = "http://localhost:8001"
+    JWT_ACCESS_TOKEN_MINUTES: int = 25
+    PERFIS_URL: str = "http://perfis:8002"
+    PERFIS_STATUS_SERVICE_TOKEN: SecretStr = SecretStr("")
+    PERFIS_SERVICE_TOKEN: SecretStr = SecretStr("")
+    AUTORIZACAO_URL: str = "http://autorizacao:8003"
+    AUTORIZACAO_SERVICE_TOKEN: SecretStr = SecretStr("")
+    INTEGRATION_TIMEOUT_SECONDS: float = 2.0
+    OAUTH_CLIENT_ID: str = "delivery-app"
+    OAUTH_REDIRECT_URI: str = "http://localhost:3000/oauth/callback"
+    JWT_AUDIENCE: str = "delivery-api"
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
@@ -25,4 +39,11 @@ class Settings(BaseSettings):
             raise ValueError("DATABASE_URL inválida") from None
         if url.drivername != "postgresql+psycopg":
             raise ValueError("DATABASE_URL deve usar postgresql+psycopg://")
+        return valor
+
+    @field_validator("JWT_ACCESS_TOKEN_MINUTES")
+    @classmethod
+    def validar_duracao_token(cls, valor: int) -> int:
+        if valor != 25:
+            raise ValueError("JWT_ACCESS_TOKEN_MINUTES deve ser 25 conforme os requisitos")
         return valor

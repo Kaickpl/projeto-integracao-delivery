@@ -33,8 +33,6 @@ class Perfil(Base):
     nome: Mapped[str] = mapped_column(String(150))
     cpf_cnpj: Mapped[str] = mapped_column(String(14), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    # Não pode ser única: pessoas diferentes podem usar a mesma senha.
-    senha: Mapped[str] = mapped_column(String(30))
     telefone: Mapped[str] = mapped_column(String(20))
     # Cliente, entregador e admin precisam ter 18 anos ou mais; todo cadastro
     # novo deles exige a data. Loja não tem (fica vazio). Perfis criados antes

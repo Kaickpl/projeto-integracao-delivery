@@ -30,6 +30,7 @@ def chave_configurada(tmp_path, monkeypatch):
             JWT_KEY_ID="teste-1",
             JWT_ISSUER="https://identidade.test",
             JWT_ACCESS_TOKEN_MINUTES=25,
+            OAUTH_SERVICE_TOKEN_MINUTES=10,
         ),
     )
     tokens._carregar_chave_privada.cache_clear()
@@ -65,6 +66,31 @@ def test_emitir_access_token_assinado_com_claims_e_expiracao(chave_configurada):
     assert claims["exp"] - claims["iat"] == 25 * 60
     assert cabecalho["kid"] == "teste-1"
     assert cabecalho["typ"] == "at+jwt"
+
+
+def test_token_de_servico_nao_contem_role_ou_sessao(chave_configurada):
+    chave, _ = chave_configurada
+    agora = datetime(2026, 11, 23, 12, 0, tzinfo=timezone.utc)
+    token = tokens.emitir_access_token_servico(
+        "financeiro-worker",
+        "https://financeiro.test",
+        ["pagamentos:ler", "notificacoes:enviar"],
+        agora=agora,
+    )
+    claims = jwt.decode(
+        token,
+        chave.public_key(),
+        algorithms=["RS256"],
+        audience="https://financeiro.test",
+        issuer="https://identidade.test",
+        options={"verify_exp": False},
+    )
+    assert claims["sub"] == "servico:financeiro-worker"
+    assert claims["client_id"] == "financeiro-worker"
+    assert claims["scope"] == "notificacoes:enviar pagamentos:ler"
+    assert claims["exp"] - claims["iat"] == 10 * 60
+    assert "role" not in claims
+    assert "sid" not in claims
 
 
 def test_jwks_publica_apenas_chave_publica(chave_configurada):

@@ -1,8 +1,10 @@
+import base64
+import binascii
 import secrets
 import re
 from html import escape
 from uuid import UUID
-from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+from urllib.parse import parse_qsl, unquote_plus, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -25,6 +27,20 @@ class IntrospeccaoRequest(BaseModel):
 class ErroOAuth(BaseModel):
     erro: bool
     mensagem: str
+    error: str | None = None
+
+
+def _erro_oauth_token(
+    status: int,
+    codigo: str,
+    mensagem: str,
+    cabecalhos: dict[str, str] | None = None,
+) -> JSONResponse:
+    return JSONResponse(
+        status_code=status,
+        content={"erro": True, "mensagem": mensagem, "error": codigo},
+        headers=cabecalhos,
+    )
 
 
 class CredencialInterna(BaseModel):
@@ -45,6 +61,24 @@ def _validar_cliente(client_id: str, redirect_uri: str, response_type: str, meth
 def _validar_desafio_pkce(challenge: str) -> None:
     if not re.fullmatch(r"[A-Za-z0-9_-]{43}", challenge):
         raise HTTPException(400, "Desafio PKCE inválido")
+
+
+def _extrair_client_secret_basic(authorization: str | None) -> tuple[str, str] | None:
+    esquema, separador, valor = (authorization or "").partition(" ")
+    if esquema.lower() != "basic" or not separador or not valor.strip():
+        return None
+    try:
+        decodificado = base64.b64decode(valor.strip(), validate=True).decode("utf-8")
+        client_id_codificado, delimitador, segredo_codificado = decodificado.partition(":")
+        if not delimitador or not client_id_codificado or not segredo_codificado:
+            return None
+        client_id = unquote_plus(client_id_codificado)
+        segredo = unquote_plus(segredo_codificado)
+        if not client_id or not segredo or len(client_id) > 120 or len(segredo) > 512:
+            return None
+        return client_id, segredo
+    except (binascii.Error, UnicodeDecodeError, ValueError):
+        return None
 
 
 @router.get("/oauth/autorizar", response_class=HTMLResponse)
@@ -124,7 +158,20 @@ def criar_credencial(
     return {"conta_id": str(dados.conta_id)}
 
 
-@router.post("/oauth/tokens")
+@router.post(
+    "/oauth/tokens",
+    summary="Emitir, renovar ou trocar tokens OAuth",
+    description=(
+        "Troca Authorization Code com PKCE ou refresh token. Quando habilitado, "
+        "aceita Client Credentials via HTTP Basic, resource e scope."
+    ),
+    responses={
+        400: {"model": ErroOAuth, "description": "Grant ou parâmetros inválidos"},
+        401: {"model": ErroOAuth, "description": "Cliente ou segredo inválido"},
+        403: {"model": ErroOAuth, "description": "Audiência ou escopo não autorizado"},
+        503: {"model": ErroOAuth, "description": "RBAC indisponível"},
+    },
+)
 def token(
     grant_type: str = Form(...),
     db: Session = Depends(get_db),
@@ -133,6 +180,9 @@ def token(
     code_verifier: str | None = Form(default=None),
     client_id: str | None = Form(default=None),
     redirect_uri: str | None = Form(default=None),
+    resource: str | None = Form(default=None, max_length=500),
+    scope: str | None = Form(default=None, max_length=2000),
+    authorization: str | None = Header(default=None),
 ):
     if grant_type == "refresh_token" and refresh_token:
         return service.renovar(db, refresh_token)
@@ -140,6 +190,57 @@ def token(
         return service.trocar_codigo(
             db, code, code_verifier, client_id, redirect_uri
         )
+    if grant_type == "client_credentials":
+        config = Settings()
+        if not config.OAUTH_CLIENT_CREDENTIALS_ENABLED:
+            return _erro_oauth_token(400, "unsupported_grant_type", "Grant não habilitado")
+        credenciais = _extrair_client_secret_basic(authorization)
+        if credenciais is None:
+            return _erro_oauth_token(
+                401,
+                "invalid_client",
+                "Cliente ou segredo inválido",
+                {"WWW-Authenticate": 'Basic realm="token"'},
+            )
+        if not resource or not scope:
+            return _erro_oauth_token(400, "invalid_request", "resource e scope são obrigatórios")
+        recurso = urlsplit(resource)
+        if not recurso.scheme or not recurso.netloc or recurso.fragment:
+            return _erro_oauth_token(
+                400,
+                "invalid_target",
+                "resource deve ser uma URI absoluta sem fragmento",
+            )
+        escopos = scope.split()
+        if not escopos or len(set(escopos)) != len(escopos):
+            return _erro_oauth_token(400, "invalid_scope", "Escopos inválidos ou repetidos")
+        if any(
+            not re.fullmatch(r"[!-~]+", item) or '"' in item or "\\" in item
+            for item in escopos
+        ):
+            return _erro_oauth_token(400, "invalid_scope", "Formato de escopo inválido")
+        try:
+            return service.emitir_token_cliente_servico(
+                db, credenciais[0], credenciais[1], resource, escopos
+            )
+        except service.EscopoClienteNaoAutorizado as exc:
+            return _erro_oauth_token(400, "invalid_scope", str(exc.detail))
+        except HTTPException as exc:
+            codigo = {
+                400: "invalid_request",
+                401: "invalid_client",
+                403: "invalid_scope",
+                503: "server_error",
+            }.get(exc.status_code, "server_error")
+            status = 400 if codigo == "invalid_scope" else exc.status_code
+            headers = {"WWW-Authenticate": 'Basic realm="token"'} if codigo == "invalid_client" else None
+            return _erro_oauth_token(status, codigo, str(exc.detail), headers)
+        except SQLAlchemyError:
+            return _erro_oauth_token(
+                503,
+                "server_error",
+                "Serviço de autenticação indisponível",
+            )
     raise HTTPException(400, "grant_type inválido")
 
 

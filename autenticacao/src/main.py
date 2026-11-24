@@ -31,6 +31,11 @@ def jwks():
 def metadados_oauth():
     config = Settings()
     base = config.JWT_ISSUER.rstrip("/")
+    grants = ["authorization_code", "refresh_token"]
+    metodos_cliente = ["none"]
+    if getattr(config, "OAUTH_CLIENT_CREDENTIALS_ENABLED", False):
+        grants.append("client_credentials")
+        metodos_cliente.append("client_secret_basic")
     return {
         "issuer": config.JWT_ISSUER,
         "authorization_endpoint": f"{base}/v1/oauth/autorizar",
@@ -39,7 +44,7 @@ def metadados_oauth():
         "introspection_endpoint": f"{base}/v1/oauth/introspeccao",
         "jwks_uri": f"{base}/.well-known/jwks.json",
         "response_types_supported": ["code"],
-        "grant_types_supported": ["authorization_code", "refresh_token"],
+        "grant_types_supported": grants,
         "code_challenge_methods_supported": ["S256"],
-        "token_endpoint_auth_methods_supported": ["none"],
+        "token_endpoint_auth_methods_supported": metodos_cliente,
     }

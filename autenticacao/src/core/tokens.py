@@ -56,6 +56,36 @@ def emitir_access_token(
     )
 
 
+def emitir_access_token_servico(
+    client_id: str,
+    audiencia: str,
+    escopos: list[str],
+    *,
+    agora: datetime | None = None,
+) -> str:
+    """Emite JWT M2M sem papel ou identificador de sessão de usuário."""
+    config = Settings()
+    chave_path = config.JWT_PRIVATE_KEY_PATH
+    chave = _carregar_chave_privada(str(chave_path), chave_path.stat().st_mtime_ns)
+    inicio = agora or datetime.now(timezone.utc)
+    claims = {
+        "iss": config.JWT_ISSUER,
+        "sub": f"servico:{client_id}",
+        "aud": audiencia,
+        "iat": inicio,
+        "exp": inicio + timedelta(minutes=config.OAUTH_SERVICE_TOKEN_MINUTES),
+        "jti": str(uuid4()),
+        "client_id": client_id,
+        "scope": " ".join(sorted(set(escopos))),
+    }
+    return jwt.encode(
+        claims,
+        chave,
+        algorithm="RS256",
+        headers={"kid": config.JWT_KEY_ID, "typ": "at+jwt"},
+    )
+
+
 def documento_jwks() -> dict[str, list[dict[str, Any]]]:
     config = Settings()
     chave_path = config.JWT_PRIVATE_KEY_PATH

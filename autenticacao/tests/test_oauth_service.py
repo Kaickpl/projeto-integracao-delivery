@@ -10,6 +10,7 @@ from pydantic import SecretStr
 
 from src.modules.oauth import service
 from src.modules.sessoes.models import CodigoAutorizacao, SessaoRefresh
+from src.modules.clientes_servico import repository as repositorio_clientes_servico
 
 
 class FakeDB:
@@ -331,3 +332,170 @@ def test_emitir_par_cria_refresh_e_access(monkeypatch):
     resultado = service.emitir_par(FakeDB(), conta_id, "ADMIN", "app", "api")
     assert resultado["refresh_token"] == "refresh"
     assert resultado["access_token"][1]["sessao_id"] == sessao_id
+
+
+def test_token_m2m_autentica_cliente_consulta_rbac_e_nao_emite_refresh(monkeypatch):
+    cliente = SimpleNamespace(ativo=True, segredo_hash="hash")
+    monkeypatch.setattr(
+        repositorio_clientes_servico.RepositorioClientesServico,
+        "buscar_para_autenticacao",
+        lambda *_: cliente,
+    )
+    monkeypatch.setattr(service, "verificar_senha", lambda *_: True)
+    monkeypatch.setattr(service, "obter_escopos_cliente_servico", lambda *_: {"pagamentos:ler"})
+    tokens_emitidos = []
+    monkeypatch.setattr(
+        service,
+        "emitir_access_token_servico",
+        lambda *args: (tokens_emitidos.append(args), "jwt-m2m")[1],
+    )
+    monkeypatch.setattr(
+        service,
+        "Settings",
+        lambda: SimpleNamespace(OAUTH_SERVICE_TOKEN_MINUTES=10),
+    )
+
+    db = FakeDB()
+    resposta = service.emitir_token_cliente_servico(
+        db,
+        "financeiro-worker",
+        "segredo",
+        "https://financeiro.test",
+        ["pagamentos:ler"],
+    )
+
+    assert resposta["access_token"] == "jwt-m2m"
+    assert resposta["expires_in"] == 600
+    assert resposta["scope"] == "pagamentos:ler"
+    assert "refresh_token" not in resposta
+    assert db.commits == 1
+    assert tokens_emitidos == [
+        ("financeiro-worker", "https://financeiro.test", ["pagamentos:ler"])
+    ]
+
+
+def test_token_m2m_rejeita_cliente_inativo_ou_segredo_invalido(monkeypatch):
+    cliente = SimpleNamespace(ativo=True, segredo_hash="hash")
+    monkeypatch.setattr(
+        repositorio_clientes_servico.RepositorioClientesServico,
+        "buscar_para_autenticacao",
+        lambda *_: cliente,
+    )
+    monkeypatch.setattr(service, "verificar_senha", lambda *_: False)
+
+    with pytest.raises(HTTPException) as erro:
+        service.emitir_token_cliente_servico(
+            FakeDB(), "worker", "segredo", "https://financeiro.test", ["pagamentos:ler"]
+        )
+
+    assert erro.value.status_code == 401
+
+
+def test_token_m2m_rejeita_cliente_desativado(monkeypatch):
+    cliente = SimpleNamespace(ativo=False, segredo_hash="hash")
+    monkeypatch.setattr(
+        repositorio_clientes_servico.RepositorioClientesServico,
+        "buscar_para_autenticacao",
+        lambda *_: cliente,
+    )
+    monkeypatch.setattr(service, "verificar_senha", lambda *_: True)
+
+    with pytest.raises(HTTPException) as erro:
+        service.emitir_token_cliente_servico(
+            FakeDB(), "worker", "segredo", "https://financeiro.test", ["pagamentos:ler"]
+        )
+
+    assert erro.value.status_code == 401
+
+
+def test_token_m2m_rejeita_escopo_nao_concedido(monkeypatch):
+    cliente = SimpleNamespace(ativo=True, segredo_hash="hash")
+    monkeypatch.setattr(
+        repositorio_clientes_servico.RepositorioClientesServico,
+        "buscar_para_autenticacao",
+        lambda *_: cliente,
+    )
+    monkeypatch.setattr(service, "verificar_senha", lambda *_: True)
+    monkeypatch.setattr(service, "obter_escopos_cliente_servico", lambda *_: {"pagamentos:ler"})
+
+    with pytest.raises(HTTPException) as erro:
+        service.emitir_token_cliente_servico(
+            FakeDB(), "worker", "segredo", "https://financeiro.test", ["pagamentos:administrar"]
+        )
+
+    assert erro.value.status_code == 400
+
+
+def test_auth_consulta_permissoes_do_rbac_com_credencial_interna(monkeypatch):
+    chamadas = []
+    config = SimpleNamespace(
+        AUTORIZACAO_URL="http://rbac:8003",
+        AUTORIZACAO_SERVICE_TOKEN=SecretStr("segredo-interno"),
+        INTEGRATION_TIMEOUT_SECONDS=2,
+    )
+    monkeypatch.setattr(service, "Settings", lambda: config)
+    monkeypatch.setattr(
+        service,
+        "_consultar_servico",
+        lambda *args: (chamadas.append(args), {"escopos": ["pagamentos:ler"]})[1],
+    )
+
+    assert service.obter_escopos_cliente_servico("financeiro-worker", "https://financeiro.test") == {
+        "pagamentos:ler"
+    }
+    assert chamadas[0][1] == "segredo-interno"
+    assert "financeiro-worker" in chamadas[0][2]
+
+
+def test_auth_rejeita_resposta_malformada_de_permissoes_do_rbac(monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "Settings",
+        lambda: SimpleNamespace(
+            AUTORIZACAO_URL="http://rbac:8003",
+            AUTORIZACAO_SERVICE_TOKEN=SecretStr("segredo-interno"),
+            INTEGRATION_TIMEOUT_SECONDS=2,
+        ),
+    )
+    monkeypatch.setattr(service, "_consultar_servico", lambda *_: {"escopos": "pagamentos:ler"})
+
+    with pytest.raises(HTTPException) as erro:
+        service.obter_escopos_cliente_servico("worker", "https://financeiro.test")
+
+    assert erro.value.status_code == 503
+
+
+@pytest.mark.parametrize(
+    "audiencia,escopos",
+    [("", ["pagamentos:ler"]), ("https://financeiro.test", []), ("https://financeiro.test", ["pagamentos:ler"] * 2)],
+)
+def test_token_m2m_rejeita_recurso_ou_escopos_vazios_ou_repetidos(
+    monkeypatch, audiencia, escopos
+):
+    cliente = SimpleNamespace(ativo=True, segredo_hash="hash")
+    monkeypatch.setattr(
+        repositorio_clientes_servico.RepositorioClientesServico,
+        "buscar_para_autenticacao",
+        lambda *_: cliente,
+    )
+    monkeypatch.setattr(service, "verificar_senha", lambda *_: True)
+
+    with pytest.raises(HTTPException) as erro:
+        service.emitir_token_cliente_servico(
+            FakeDB(), "worker", "segredo", audiencia, escopos
+        )
+
+    assert erro.value.status_code == 400
+
+
+def test_token_m2m_rejeita_cliente_inexistente(monkeypatch):
+    monkeypatch.setattr(
+        repositorio_clientes_servico.RepositorioClientesServico,
+        "buscar_para_autenticacao",
+        lambda *_: None,
+    )
+    with pytest.raises(HTTPException) as erro:
+        service.emitir_token_cliente_servico(
+            FakeDB(), "ausente", "segredo", "https://financeiro.test", ["pagamentos:ler"]
+        )
+    assert erro.value.status_code == 401

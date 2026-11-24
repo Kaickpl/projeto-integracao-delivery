@@ -4,6 +4,7 @@ import re
 import secrets
 from datetime import datetime, timedelta, timezone
 from uuid import UUID, uuid4
+from urllib.parse import quote
 
 import httpx
 import jwt
@@ -13,12 +14,22 @@ from sqlalchemy.orm import Session
 
 from src.core.config import Settings
 from src.core.security import verificar_senha
-from src.core.tokens import carregar_chave_publica, emitir_access_token
+from src.core.tokens import (
+    carregar_chave_publica,
+    emitir_access_token,
+    emitir_access_token_servico,
+)
 from src.modules.credenciais.repository import RepositorioCredenciais
+from src.modules.clientes_servico.repository import RepositorioClientesServico
 from src.modules.sessoes.models import CodigoAutorizacao, SessaoRefresh
 
 PAPEIS_VALIDOS = {"CLIENTE", "LOJA", "ENTREGADOR", "ADMIN"}
 DIAS_REFRESH = 7
+
+
+class EscopoClienteNaoAutorizado(HTTPException):
+    def __init__(self) -> None:
+        super().__init__(400, "Escopo ou audiência não autorizados")
 
 
 def _consultar_servico(url: str, token: str, caminho: str) -> dict:
@@ -57,6 +68,62 @@ def obter_status_e_papel(conta_id: UUID) -> tuple[str, str]:
     if role not in PAPEIS_VALIDOS:
         raise HTTPException(403, "Papel da conta inválido")
     return status, role
+
+
+def obter_escopos_cliente_servico(client_id: str, audiencia: str) -> set[str]:
+    config = Settings()
+    caminho = (
+        f"/v1/interno/clientes/{quote(client_id, safe='')}/permissoes"
+        f"?audiencia={quote(audiencia, safe='')}"
+    )
+    resposta = _consultar_servico(
+        config.AUTORIZACAO_URL,
+        config.AUTORIZACAO_SERVICE_TOKEN.get_secret_value(),
+        caminho,
+    )
+    escopos = resposta.get("escopos")
+    if not isinstance(escopos, list) or any(not isinstance(item, str) for item in escopos):
+        raise HTTPException(503, "Resposta inválida do serviço de Autorização")
+    return set(escopos)
+
+
+def emitir_token_cliente_servico(
+    db: Session,
+    client_id: str,
+    segredo: str,
+    audiencia: str,
+    escopos_solicitados: list[str],
+) -> dict:
+    cliente = RepositorioClientesServico(db).buscar_para_autenticacao(client_id)
+    if (
+        cliente is None
+        or not cliente.ativo
+        or not verificar_senha(segredo, cliente.segredo_hash)
+    ):
+        raise HTTPException(401, "Cliente ou segredo inválido")
+    if not audiencia or not escopos_solicitados:
+        raise HTTPException(400, "Audiência e ao menos um escopo são obrigatórios")
+    if len(set(escopos_solicitados)) != len(escopos_solicitados):
+        raise HTTPException(400, "Escopo repetido")
+
+    permitidos = obter_escopos_cliente_servico(client_id, audiencia)
+    if not set(escopos_solicitados).issubset(permitidos):
+        raise EscopoClienteNaoAutorizado()
+
+    access_token = emitir_access_token_servico(
+        client_id,
+        audiencia,
+        escopos_solicitados,
+    )
+    # A leitura da credencial é bloqueada até a decisão de emissão ser
+    # concluída; comandos de rotação/desativação usam a mesma linha-âncora.
+    db.commit()
+    return {
+        "access_token": access_token,
+        "token_type": "Bearer",
+        "expires_in": Settings().OAUTH_SERVICE_TOKEN_MINUTES * 60,
+        "scope": " ".join(sorted(set(escopos_solicitados))),
+    }
 
 
 def _novo_refresh(db: Session, conta_id: UUID, client_id: str, audience: str, sessao_id: UUID | None = None):

@@ -40,6 +40,26 @@ python -m alembic current
 
 O Auth cria as tabelas de credenciais, sessões de refresh e códigos OAuth no schema `autenticacao`. A inicialização da API não executa migrações.
 
+### Bancos compartilhados com perfis antigos
+
+O histórico de versões do Auth fica em `autenticacao.alembic_version`. Perfis usa `public.alembic_version`.
+Aplicar as migrações do Auth cria a estrutura para as credenciais. Os cadastros antigos de Perfis precisam de tratamento separado.
+
+Antes da migração de Perfis que remove `public.perfis.senha`, use a consulta abaixo para contar os perfis que ainda precisam de credenciais no Auth.
+
+```sql
+SELECT count(*) AS perfis_sem_credencial
+FROM public.perfis AS p
+WHERE NOT EXISTS (
+    SELECT 1 FROM autenticacao.credenciais AS c WHERE c.conta_id = p.id
+);
+```
+
+Se houver pendências, combine com o responsável por Perfis quais contas precisam manter o acesso.
+Para essas contas, provisione as credenciais com o mesmo UUID do perfil e valide o acesso antes da remoção da coluna.
+Para cadastros de teste que possam perder as credenciais antigas, registre a decisão na issue.
+O serviço Auth continua consultando apenas suas próprias tabelas em tempo de execução.
+
 ## Testes
 
 Testes unitários e de rotas do Auth:

@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     INTERNAL_SERVICE_TOKEN: SecretStr = SecretStr("")
     AUTHENTICACAO_SERVICE_TOKEN: SecretStr = SecretStr("")
     AUTHENTICACAO_URL: str = "http://autenticacao:8001"
+    AUTHENTICACAO_ISSUER: str = "http://localhost:8001"
     INTEGRATION_TIMEOUT_SECONDS: float = 2.0
 
     model_config = SettingsConfigDict(

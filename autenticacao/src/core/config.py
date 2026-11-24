@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     OAUTH_CLIENT_ID: str = "delivery-app"
     OAUTH_REDIRECT_URI: str = "http://localhost:3000/oauth/callback"
     JWT_AUDIENCE: str = "delivery-api"
+    OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
+    OAUTH_SERVICE_TOKEN_MINUTES: int = 10
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",
@@ -46,4 +48,11 @@ class Settings(BaseSettings):
     def validar_duracao_token(cls, valor: int) -> int:
         if valor != 25:
             raise ValueError("JWT_ACCESS_TOKEN_MINUTES deve ser 25 conforme os requisitos")
+        return valor
+
+    @field_validator("OAUTH_SERVICE_TOKEN_MINUTES")
+    @classmethod
+    def validar_duracao_token_servico(cls, valor: int) -> int:
+        if not 1 <= valor <= 15:
+            raise ValueError("OAUTH_SERVICE_TOKEN_MINUTES deve estar entre 1 e 15")
         return valor

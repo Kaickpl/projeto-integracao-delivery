@@ -15,10 +15,11 @@ docker compose -f Docker-compose.integracao.yml up -d banco_integracao
 Rode cada migração como etapa controlada, antes das APIs:
 
 ```powershell
-docker compose -f Docker-compose.integracao.yml run --rm autenticacao alembic upgrade head
-docker compose -f Docker-compose.integracao.yml run --rm perfis alembic upgrade e5a9b3c7f1d2
-docker compose -f Docker-compose.integracao.yml run --rm perfis alembic upgrade head
-docker compose -f Docker-compose.integracao.yml run --rm autorizacao python -m alembic upgrade head
+docker compose -f Docker-compose.integracao.yml run --build --rm autenticacao alembic upgrade head
+docker compose -f Docker-compose.integracao.yml run --build --rm perfis alembic upgrade e5a9b3c7f1d2
+docker compose -f Docker-compose.integracao.yml run --build --rm perfis alembic upgrade head
+docker compose -f Docker-compose.integracao.yml run --build --rm autorizacao python -m alembic upgrade head
+docker compose -f Docker-compose.integracao.yml run --build --rm preparar_cliente_m2m
 ```
 
 Confira as versões registradas:
@@ -49,12 +50,17 @@ $env:INTEGRATION_PERFIS_URL = "http://127.0.0.1:18002"
 $env:INTEGRATION_RBAC_URL = "http://127.0.0.1:18003"
 $env:INTEGRATION_PERFIS_TOKEN = "teste-auth-perfis"
 $env:INTEGRATION_RBAC_TOKEN = "teste-auth-rbac"
+$env:INTEGRATION_M2M_CLIENT_ID = "teste-worker-financeiro"
+$env:INTEGRATION_M2M_CLIENT_SECRET = "segredo-m2m-apenas-teste-local"
+$env:INTEGRATION_M2M_AUDIENCE = "https://financeiro.example.test"
 python -m pytest tests/test_integracao_servicos.py -q
 ```
 
 Para incluir o teste de persistência após reiniciar uma instância Auth, antes do `pytest` defina `$env:INTEGRATION_RESTART_AUTH_REPLICA = "1"`. O teste reinicia somente `autenticacao_replica`, espera o health check e verifica que o refresh revogado segue inválido e que o RBAC continua retornando `401`.
 
 O teste cria um cliente com CPF válido aleatório, verifica que o status pendente impede a autorização, ativa a conta no ambiente descartável, consulta o papel no RBAC, conclui Authorization Code + PKCE, valida assinatura e claims via JWKS, verifica o access token no endpoint RBAC, renova e revoga em outra instância Auth com a mesma persistência, tenta reutilizar o refresh anterior e confirma que o RBAC retorna `401` após a revogação. Também testa logout com access token e confirma que o refresh da família deixa de funcionar. O endpoint de perfil administrativo usado para ativar a conta não deve ser exposto sem autorização fora deste ambiente.
+
+O mesmo arquivo de teste inclui o fluxo Client Credentials: cria um cliente e uma permissão temporários somente no banco local, solicita tokens com Basic em duas instâncias, faz emissões concorrentes, valida assinatura/claims via JWKS e pede ao RBAC uma operação permitida e outra negada. A fixture grava a partir do container Auth e recusa qualquer banco que não esteja no host `banco_integracao`, com usuário `integracao_teste` e nome iniciado por `delivery_teste`. Com `INTEGRATION_RESTART_AUTH_REPLICA=1`, também reinicia a réplica e confirma que ela continua autenticando o cliente pelo estado persistido no banco.
 
 ## Encerrar e descartar o banco local
 

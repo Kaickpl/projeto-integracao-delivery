@@ -26,6 +26,21 @@ services:
       timeout: 3s
       retries: 30
 
+  preparar_cliente_m2m:
+    build: ./autenticacao
+    working_dir: /code
+    command: python -m tests.fixture_client_credentials
+    environment:
+      DATABASE_URL: postgresql+psycopg://integracao_teste:integracao_teste_local@banco_integracao:5432/delivery_teste
+      FIXTURE_ACTION: preparar
+      FIXTURE_CLIENT_ID: teste-worker-financeiro
+      FIXTURE_CLIENT_SECRET: segredo-m2m-apenas-teste-local
+      FIXTURE_AUDIENCE: https://financeiro.example.test
+      FIXTURE_SCOPE: pagamentos:ler
+    depends_on:
+      banco_integracao:
+        condition: service_healthy
+
   autenticacao:
     build: ./autenticacao
     working_dir: /code
@@ -40,6 +55,8 @@ services:
       JWT_ISSUER: http://127.0.0.1:18001
       JWT_ACCESS_TOKEN_MINUTES: "25"
       JWT_AUDIENCE: delivery-api
+      OAUTH_CLIENT_CREDENTIALS_ENABLED: "true"
+      OAUTH_SERVICE_TOKEN_MINUTES: "10"
       OAUTH_CLIENT_ID: delivery-app
       OAUTH_REDIRECT_URI: http://localhost:3000/oauth/callback
       PERFIS_URL: http://perfis:8002
@@ -70,6 +87,8 @@ services:
       JWT_ISSUER: http://127.0.0.1:18001
       JWT_ACCESS_TOKEN_MINUTES: "25"
       JWT_AUDIENCE: delivery-api
+      OAUTH_CLIENT_CREDENTIALS_ENABLED: "true"
+      OAUTH_SERVICE_TOKEN_MINUTES: "10"
       OAUTH_CLIENT_ID: delivery-app
       OAUTH_REDIRECT_URI: http://localhost:3000/oauth/callback
       PERFIS_URL: http://perfis:8002
@@ -116,6 +135,7 @@ services:
       INTERNAL_SERVICE_TOKEN: teste-perfis-rbac
       AUTHENTICACAO_SERVICE_TOKEN: teste-auth-rbac
       AUTHENTICACAO_URL: http://autenticacao:8001
+      AUTHENTICACAO_ISSUER: http://127.0.0.1:18001
       INTEGRATION_TIMEOUT_SECONDS: "2"
     depends_on:
       banco_integracao:

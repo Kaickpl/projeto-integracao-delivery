@@ -28,7 +28,8 @@ O contrato prevê Client Credentials com credencial distinta por serviço consum
 | `POST /v1/oauth/entrar` | Submissão do formulário hospedado pelo Auth; não é um grant OAuth de senha. |
 | `POST /v1/oauth/tokens` | Trocar código por tokens ou renovar via refresh token, usando formulário OAuth. |
 | `POST /v1/oauth/revogar` | Revogar a família de sessão pelo refresh token; resposta não revela se o token existe. |
-| `POST /v1/oauth/introspeccao` | Consulta autenticada por serviço confiável (Autorização/RBAC) para confirmar `active`, `sub` e `jti`, inclusive estado de revogação. |
+| `POST /v1/oauth/introspeccao` | Consulta autenticada por serviço confiável (Autorização/RBAC) para confirmar `active`, `sub`, `jti` e `role`, inclusive estado de revogação. |
+| `POST /v1/tokens/validar` (Autorização/RBAC) | Recebe o access token em `Authorization: Bearer`, confirma a sessão online no Auth e devolve o papel atualmente associado no RBAC. |
 | `GET /.well-known/jwks.json` | Publicar chaves públicas para validar assinaturas. |
 | `GET /.well-known/oauth-authorization-server` | Metadados do Authorization Server, incluindo issuer, endpoints, grant types e `jwks_uri`. |
 
@@ -48,8 +49,10 @@ Os caminhos da API são o contrato em português. Os caminhos `/.well-known/jwks
 - Refresh token é opaco, aleatório, rotativo e de uso único; armazenar no banco apenas hash/identificador não reversível e estado da família de sessão.
 - **Prazo provisório do refresh token:** 7 dias. A equipe pode alterar este prazo ao revisar a proposta.
 - Reutilização de refresh token já rotacionado revoga a família de sessão e exige novo login.
+- Logout revoga a família inteira da sessão, incluindo tokens de refresh anteriores, o refresh atual e o access token associado. O endpoint aceita `token` e um `token_type_hint` opcional em formulário RFC 7009; a indicação não altera a resposta idempotente.
 - Login e refresh consultam o status atual no serviço Perfis por `conta_id` (INT-01). Só `ATIVO` recebe tokens. Conta pendente/suspensa recebe `403`; indisponibilidade de Perfis resulta em `503`, sem emissão/renovação.
-- Logout revoga a sessão/família de refresh no PostgreSQL compartilhado antes de responder sucesso. A introspecção retorna `active: false` para tokens/sessões revogados.
+- Logout revoga a sessão/família de refresh no PostgreSQL compartilhado antes de responder sucesso. A introspecção retorna `active: false` para tokens/sessões revogados. Se o banco falhar, Auth responde `503` e não confirma o logout.
+- Antes de autorizar uma requisição protegida, consumidores consultam `POST /v1/tokens/validar` no RBAC com o access token do usuário. RBAC consulta a introspecção autenticada do Auth; token inválido, expirado, revogado ou com papel desatualizado resulta em `401`. Indisponibilidade do Auth ou do banco RBAC resulta em `503` (falha fechada).
 - Se o estado persistido não puder ser atualizado, logout não pode ser confirmado como concluído. Revogação não depende de cache local nem de entrega de mensagem.
 
 ## RabbitMQ

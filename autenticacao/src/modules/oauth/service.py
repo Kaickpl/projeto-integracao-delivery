@@ -82,6 +82,18 @@ def emitir_par(db: Session, conta_id: UUID, role: str, client_id: str, audience:
     return {"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 1500}
 
 
+def _bloquear_familia(db: Session, sessao_id: UUID) -> bool:
+    """Serializa refresh e logout na linha-âncora estável da família."""
+    ancora = db.scalar(
+        select(SessaoRefresh.id)
+        .where(SessaoRefresh.sessao_id == sessao_id)
+        .order_by(SessaoRefresh.criado_em, SessaoRefresh.id)
+        .limit(1)
+        .with_for_update()
+    )
+    return ancora is not None
+
+
 def login(db: Session, email: str, senha: str, client_id: str, audience: str):
     credencial = RepositorioCredenciais(db).buscar_por_email(email)
     if not credencial or not verificar_senha(senha, credencial.senha_hash):
@@ -94,8 +106,18 @@ def login(db: Session, email: str, senha: str, client_id: str, audience: str):
 
 def renovar(db: Session, token: str):
     digest = hashlib.sha256(token.encode()).hexdigest()
+    sessao_id = db.scalar(
+        select(SessaoRefresh.sessao_id).where(SessaoRefresh.token_hash == digest)
+    )
+    if sessao_id is None:
+        raise HTTPException(401, "Refresh token inválido")
+    if not _bloquear_familia(db, sessao_id):
+        raise HTTPException(401, "Refresh token inválido")
     registro = db.scalar(
-        select(SessaoRefresh).where(SessaoRefresh.token_hash == digest).with_for_update()
+        select(SessaoRefresh)
+        .where(SessaoRefresh.token_hash == digest)
+        .with_for_update()
+        .execution_options(populate_existing=True)
     )
     agora = datetime.now(timezone.utc)
     if registro is None:
@@ -134,22 +156,83 @@ def renovar(db: Session, token: str):
 
 
 def revogar(db: Session, token: str) -> dict:
-    """Revoga a família associada ao refresh token, sem revelar se ele existe."""
+    """Revoga toda a família usando refresh token ou access token assinado.
+
+    A resposta é sempre vazia para não revelar se o token era conhecido. Para um
+    access token expirado, a assinatura e os demais claims continuam sendo
+    verificados; isso permite logout mesmo quando a tela ficou aberta por mais
+    tempo que a validade do access token.
+    """
     digest = hashlib.sha256(token.encode()).hexdigest()
-    registro = db.scalar(
-        select(SessaoRefresh)
-        .where(SessaoRefresh.token_hash == digest)
-        .with_for_update()
+    sessao_id = db.scalar(
+        select(SessaoRefresh.sessao_id).where(SessaoRefresh.token_hash == digest)
     )
-    if registro is None:
+    if sessao_id is None:
+        claims = _decodificar_access_token(token, permitir_expirado=True)
+        if claims is None:
+            return {}
+        sessao_id = UUID(claims["sid"])
+    # Refresh e logout bloqueiam a mesma linha-âncora antes de modificar a
+    # família. Assim, um logout concorrente não deixa escapar um refresh novo.
+    if not _bloquear_familia(db, sessao_id):
         return {}
+
     agora = datetime.now(timezone.utc)
     db.query(SessaoRefresh).filter(
-        SessaoRefresh.sessao_id == registro.sessao_id,
+        SessaoRefresh.sessao_id == sessao_id,
         SessaoRefresh.revogado_em.is_(None),
     ).update({SessaoRefresh.revogado_em: agora}, synchronize_session=False)
     db.commit()
     return {}
+
+
+def _decodificar_access_token(token: str, *, permitir_expirado: bool = False) -> dict | None:
+    """Valida claims e assinatura; não registra nem retorna dados fora do processo."""
+    config = Settings()
+    try:
+        header = jwt.get_unverified_header(token)
+        if header.get("typ") != "at+jwt" or header.get("alg") != "RS256":
+            return None
+        claims = jwt.decode(
+            token,
+            carregar_chave_publica(header.get("kid", "")),
+            algorithms=["RS256"],
+            issuer=config.JWT_ISSUER,
+            audience=config.JWT_AUDIENCE,
+            options={
+                "require": ["exp", "iat", "sub", "jti", "sid", "role"],
+                "verify_exp": not permitir_expirado,
+            },
+        )
+        UUID(claims["sub"])
+        UUID(claims["sid"])
+        if claims["role"] not in PAPEIS_VALIDOS:
+            return None
+        return claims
+    except (jwt.InvalidTokenError, KeyError, TypeError, ValueError, OSError):
+        return None
+
+
+def introspeccionar(db: Session, token: str) -> dict:
+    claims = _decodificar_access_token(token)
+    if claims is None:
+        return {"active": False}
+    sessao_id = UUID(claims["sid"])
+    ativa = db.scalar(
+        select(SessaoRefresh.id).where(
+            SessaoRefresh.sessao_id == sessao_id,
+            SessaoRefresh.revogado_em.is_(None),
+            SessaoRefresh.expira_em > datetime.now(timezone.utc),
+        ).limit(1)
+    ) is not None
+    if not ativa:
+        return {"active": False}
+    return {
+        "active": True,
+        "sub": claims["sub"],
+        "jti": claims["jti"],
+        "role": claims["role"],
+    }
 
 
 def autorizar(db: Session, email: str, senha: str, client_id: str, redirect_uri: str, challenge: str):
@@ -196,28 +279,3 @@ def trocar_codigo(db: Session, codigo: str, verifier: str, client_id: str, redir
     resposta = emitir_par(db, registro.conta_id, role, client_id, config.JWT_AUDIENCE)
     db.commit()
     return resposta
-
-
-def introspeccionar(db: Session, token: str) -> dict:
-    config = Settings()
-    try:
-        header = jwt.get_unverified_header(token)
-        claims = jwt.decode(
-            token,
-            carregar_chave_publica(header.get("kid", "")),
-            algorithms=["RS256"],
-            issuer=config.JWT_ISSUER,
-            audience=config.JWT_AUDIENCE,
-            options={"require": ["exp", "iat", "sub", "jti", "sid"]},
-        )
-        sessao_id = UUID(claims["sid"])
-        ativa = db.scalar(
-            select(SessaoRefresh.id).where(
-                SessaoRefresh.sessao_id == sessao_id,
-                SessaoRefresh.revogado_em.is_(None),
-                SessaoRefresh.expira_em > datetime.now(timezone.utc),
-            ).limit(1)
-        ) is not None
-        return {"active": ativa, "sub": claims["sub"], "jti": claims["jti"]}
-    except (jwt.InvalidTokenError, KeyError, ValueError, OSError):
-        return {"active": False}

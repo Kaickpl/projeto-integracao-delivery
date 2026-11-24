@@ -2,6 +2,7 @@ from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
 from fastapi.testclient import TestClient
+from sqlalchemy.exc import SQLAlchemyError
 
 from src.core.database import get_db
 import src.main as principal
@@ -159,6 +160,37 @@ def test_endpoint_de_revogacao_persiste_pelo_servico(monkeypatch):
         assert resposta.status_code == 200
         assert resposta.json() == {}
         assert tokens == ["refresh-opaco"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_revogacao_nao_confirma_sucesso_quando_banco_falha(monkeypatch):
+    class BancoComRollback:
+        chamadas_rollback = 0
+
+        def rollback(self):
+            self.chamadas_rollback += 1
+
+    banco = BancoComRollback()
+    app.dependency_overrides[get_db] = lambda: banco
+
+    def falhar(_db, _token):
+        raise SQLAlchemyError("banco indisponível")
+
+    monkeypatch.setattr(rotas_oauth.service, "revogar", falhar)
+    cliente = cliente_teste(monkeypatch)
+    app.dependency_overrides[get_db] = lambda: banco
+    try:
+        resposta = cliente.post(
+            "/v1/oauth/revogar",
+            data={"token": "refresh", "token_type_hint": "refresh_token"},
+        )
+        assert resposta.status_code == 503
+        assert resposta.json() == {
+            "erro": True,
+            "mensagem": "Não foi possível confirmar a revogação",
+        }
+        assert banco.chamadas_rollback == 1
     finally:
         app.dependency_overrides.clear()
 

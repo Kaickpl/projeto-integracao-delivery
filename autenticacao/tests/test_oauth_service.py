@@ -4,6 +4,7 @@ from uuid import uuid4
 
 import jwt
 import pytest
+import httpx
 from fastapi import HTTPException
 from pydantic import SecretStr
 
@@ -14,6 +15,7 @@ from src.modules.sessoes.models import CodigoAutorizacao, SessaoRefresh
 class FakeDB:
     def __init__(self, registro=None):
         self.registro = registro
+        self.resultados_scalar = []
         self.adicionados = []
         self.commits = 0
 
@@ -27,6 +29,8 @@ class FakeDB:
         self.commits += 1
 
     def scalar(self, _query):
+        if self.resultados_scalar:
+            return self.resultados_scalar.pop(0)
         return self.registro
 
     def query(self, _model):
@@ -74,10 +78,31 @@ def test_refresh_desconhecido_retorna_401():
 
 
 def test_revogar_token_persiste_revogacao_da_familia():
-    registro = SimpleNamespace(sessao_id=uuid4())
-    db = FakeDB(registro)
+    registro = SimpleNamespace(sessao_id=uuid4(), id=uuid4())
+    db = FakeDB()
+    db.resultados_scalar = [registro.sessao_id, registro.id]
     assert service.revogar(db, "refresh-valido") == {}
     assert db.commits == 1
+
+
+def test_revogar_access_token_usa_sessao_e_persiste_familia(monkeypatch):
+    sessao_id = uuid4()
+    db = FakeDB()
+    db.resultados_scalar = [None, uuid4()]
+    monkeypatch.setattr(
+        service,
+        "_decodificar_access_token",
+        lambda *_args, **_kwargs: {"sid": str(sessao_id)},
+    )
+    assert service.revogar(db, "access-token") == {}
+    assert db.commits == 1
+
+
+def test_revogar_token_desconhecido_e_idempotente(monkeypatch):
+    db = FakeDB()
+    monkeypatch.setattr(service, "_decodificar_access_token", lambda *_args, **_kwargs: None)
+    assert service.revogar(db, "token-desconhecido") == {}
+    assert db.commits == 0
 
 
 def test_troca_codigo_valida_pkce_e_emite_tokens(monkeypatch):
@@ -102,10 +127,118 @@ def test_troca_codigo_valida_pkce_e_emite_tokens(monkeypatch):
 
 def test_introspeccao_retorna_inativo_para_jwt_invalido(monkeypatch):
     monkeypatch.setattr(service, "Settings", lambda: SimpleNamespace(JWT_ISSUER="issuer", JWT_AUDIENCE="api"))
-    monkeypatch.setattr(service.jwt, "get_unverified_header", lambda *_: {"kid": "kid"})
+    monkeypatch.setattr(
+        service.jwt,
+        "get_unverified_header",
+        lambda *_: {"kid": "kid", "typ": "at+jwt", "alg": "RS256"},
+    )
     monkeypatch.setattr(service, "carregar_chave_publica", lambda *_: object())
     monkeypatch.setattr(service.jwt, "decode", lambda *_args, **_kwargs: (_ for _ in ()).throw(jwt.InvalidTokenError()))
     assert service.introspeccionar(FakeDB(), "invalid") == {"active": False}
+
+
+def test_introspeccao_ativa_devolve_papel_e_identificadores(monkeypatch):
+    conta_id, sessao_id, jti = uuid4(), uuid4(), str(uuid4())
+    monkeypatch.setattr(
+        service,
+        "_decodificar_access_token",
+        lambda *_args, **_kwargs: {
+            "sub": str(conta_id),
+            "sid": str(sessao_id),
+            "jti": jti,
+            "role": "ENTREGADOR",
+        },
+    )
+    db = FakeDB()
+    db.resultados_scalar = [uuid4()]
+    assert service.introspeccionar(db, "token") == {
+        "active": True,
+        "sub": str(conta_id),
+        "jti": jti,
+        "role": "ENTREGADOR",
+    }
+
+
+def test_decodificador_confere_tipo_assinatura_issuer_e_audience(monkeypatch):
+    conta_id, sessao_id = uuid4(), uuid4()
+    claims = {
+        "sub": str(conta_id),
+        "sid": str(sessao_id),
+        "jti": str(uuid4()),
+        "role": "CLIENTE",
+    }
+    chamadas = {}
+    monkeypatch.setattr(
+        service,
+        "Settings",
+        lambda: SimpleNamespace(JWT_ISSUER="issuer", JWT_AUDIENCE="audiencia"),
+    )
+    monkeypatch.setattr(
+        service.jwt,
+        "get_unverified_header",
+        lambda *_: {"typ": "at+jwt", "alg": "RS256", "kid": "chave-1"},
+    )
+    monkeypatch.setattr(service, "carregar_chave_publica", lambda kid: f"publica:{kid}")
+
+    def decodificar(token, chave, **opcoes):
+        chamadas.update(token=token, chave=chave, opcoes=opcoes)
+        return claims
+
+    monkeypatch.setattr(service.jwt, "decode", decodificar)
+    assert service._decodificar_access_token("jwt") == claims
+    assert chamadas["chave"] == "publica:chave-1"
+    assert chamadas["opcoes"]["algorithms"] == ["RS256"]
+    assert chamadas["opcoes"]["issuer"] == "issuer"
+    assert chamadas["opcoes"]["audience"] == "audiencia"
+    assert chamadas["opcoes"]["options"]["verify_exp"] is True
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        {"typ": "JWT", "alg": "RS256", "kid": "chave-1"},
+        {"typ": "at+jwt", "alg": "HS256", "kid": "chave-1"},
+    ],
+)
+def test_decodificador_rejeita_tipo_ou_algoritmo_inesperado(monkeypatch, header):
+    monkeypatch.setattr(
+        service,
+        "Settings",
+        lambda: SimpleNamespace(JWT_ISSUER="issuer", JWT_AUDIENCE="audiencia"),
+    )
+    monkeypatch.setattr(service.jwt, "get_unverified_header", lambda *_: header)
+    assert service._decodificar_access_token("jwt") is None
+
+
+def test_decodificador_permita_validar_assinatura_de_token_expirado_no_logout(monkeypatch):
+    conta_id, sessao_id = uuid4(), uuid4()
+    chamadas = []
+    monkeypatch.setattr(
+        service,
+        "Settings",
+        lambda: SimpleNamespace(JWT_ISSUER="issuer", JWT_AUDIENCE="audiencia"),
+    )
+    monkeypatch.setattr(
+        service.jwt,
+        "get_unverified_header",
+        lambda *_: {"typ": "at+jwt", "alg": "RS256", "kid": "chave-1"},
+    )
+    monkeypatch.setattr(service, "carregar_chave_publica", lambda *_: "publica")
+    monkeypatch.setattr(
+        service.jwt,
+        "decode",
+        lambda *_args, **kwargs: (
+            chamadas.append(kwargs),
+            {
+                "sub": str(conta_id),
+                "sid": str(sessao_id),
+                "jti": str(uuid4()),
+                "role": "ADMIN",
+            },
+        )[1],
+    )
+    assert service._decodificar_access_token("jwt", permitir_expirado=True)["sid"] == str(sessao_id)
+    assert chamadas[0]["options"]["verify_exp"] is False
 
 
 def test_consulta_integrada_busca_status_e_papel(monkeypatch):
@@ -119,6 +252,59 @@ def test_consulta_integrada_busca_status_e_papel(monkeypatch):
     monkeypatch.setattr(service, "_consultar_servico", lambda *args: (chamadas.append(args), next(respostas))[1])
     assert service.obter_status_e_papel(uuid4()) == ("ATIVO", "ENTREGADOR")
     assert len(chamadas) == 2
+
+
+def test_consulta_servico_retorna_json_e_trata_erros_de_integracao(monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "Settings",
+        lambda: SimpleNamespace(INTEGRATION_TIMEOUT_SECONDS=1),
+    )
+    monkeypatch.setattr(
+        service.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(
+            200,
+            json={"status": "ATIVO"},
+            request=httpx.Request("GET", "http://perfis/status"),
+        ),
+    )
+    assert service._consultar_servico("http://perfis/", "segredo", "/status") == {
+        "status": "ATIVO"
+    }
+
+
+@pytest.mark.parametrize("status,codigo", [(404, 403), (500, 503)])
+def test_consulta_servico_traduz_status_http(monkeypatch, status, codigo):
+    monkeypatch.setattr(
+        service,
+        "Settings",
+        lambda: SimpleNamespace(INTEGRATION_TIMEOUT_SECONDS=1),
+    )
+    resposta = httpx.Response(
+        status,
+        request=httpx.Request("GET", "http://perfis/status"),
+    )
+    monkeypatch.setattr(service.httpx, "get", lambda *_args, **_kwargs: resposta)
+    with pytest.raises(HTTPException) as erro:
+        service._consultar_servico("http://perfis", "segredo", "/status")
+    assert erro.value.status_code == codigo
+
+
+def test_consulta_servico_trata_timeout_como_503(monkeypatch):
+    monkeypatch.setattr(
+        service,
+        "Settings",
+        lambda: SimpleNamespace(INTEGRATION_TIMEOUT_SECONDS=1),
+    )
+    monkeypatch.setattr(
+        service.httpx,
+        "get",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(httpx.TimeoutException("timeout")),
+    )
+    with pytest.raises(HTTPException) as erro:
+        service._consultar_servico("http://perfis", "segredo", "/status")
+    assert erro.value.status_code == 503
 
 
 @pytest.mark.parametrize(

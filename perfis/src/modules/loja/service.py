@@ -10,6 +10,7 @@ from src.core.exceptions import (
     DadosInvalidos,
     PerfilNaoEncontrado,
 )
+from src.core.identidade import criar_credencial_e_associar_papel
 from src.modules.loja.schemas import (
     MENSAGEM_TEMPO_ESTIMADO,
     LojaCreate,
@@ -38,12 +39,14 @@ def _salvar(db: Session, loja: Loja) -> Loja:
 def cadastrar_loja(db: Session, dados: LojaCreate) -> Loja:
     # A conta começa aguardando a aprovação do admin e a loja começa fechada.
     loja = Loja(
-        **dados.model_dump(exclude={"endereco"}),
+        **dados.model_dump(exclude={"endereco", "senha"}),
         endereco=Endereco(**dados.endereco.model_dump()),
         status=StatusConta.PENDENTE_APROVACAO,
         status_funcionamento=StatusFuncionamento.FECHADO,
     )
     db.add(loja)
+    db.flush()
+    criar_credencial_e_associar_papel(loja.id, loja.email, dados.senha, "LOJA")
     return _salvar(db, loja)
 
 

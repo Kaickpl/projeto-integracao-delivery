@@ -5,6 +5,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.core.exceptions import AcaoNaoPermitida, DadoDuplicado, PerfilNaoEncontrado
+from src.core.identidade import criar_credencial_e_associar_papel
 from src.modules.admin.schemas import AdminCreate, PerfilAdminUpdate
 from src.modules.perfil_usuario.admin import Admin
 from src.modules.perfil_usuario.perfil import Perfil, StatusConta, TipoPerfil
@@ -41,8 +42,10 @@ def listar_perfis(
 
 
 def criar_admin(db: Session, dados: AdminCreate) -> Perfil:
-    admin = Admin(**dados.model_dump(), status=StatusConta.ATIVO)
+    admin = Admin(**dados.model_dump(exclude={"senha"}), status=StatusConta.ATIVO)
     db.add(admin)
+    db.flush()
+    criar_credencial_e_associar_papel(admin.id, admin.email, dados.senha, "ADMIN")
     _commit(db)
     db.refresh(admin)
     return admin

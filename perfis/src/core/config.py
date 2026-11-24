@@ -3,6 +3,11 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     DATABASE_URL: str
+    INTERNAL_SERVICE_TOKEN: str = ""
+    AUTENTICACAO_URL: str = "http://autenticacao:8001"
+    AUTENTICACAO_SERVICE_TOKEN: str = ""
+    AUTORIZACAO_URL: str = "http://autorizacao:8003"
+    AUTORIZACAO_SERVICE_TOKEN: str = ""
     VIACEP_URL: str = "https://viacep.com.br/ws"
     VIACEP_TIMEOUT: float = 5.0
 

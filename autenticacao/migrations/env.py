@@ -6,6 +6,7 @@ from sqlalchemy.schema import CreateSchema
 from src.core.config import Settings
 from src.core.database import Base, SCHEMA_AUTENTICACAO
 from src.modules.credenciais import models  # noqa: F401
+from src.modules.sessoes import models as sessoes_models  # noqa: F401
 
 
 def incluir_schema(nome, tipo, _nomes_pai):

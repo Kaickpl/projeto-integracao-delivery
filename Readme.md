@@ -1,265 +1,109 @@
-# 🔐 Equipe 1 — Identidade
+# Equipe 1 — Identidade
 
-Conjunto de **3 microsserviços** responsáveis pela base de identidade do sistema: autenticação, cadastro de perfis e autorização. Todos os demais serviços da turma (15 microsserviços no total) consultam esta equipe para **validar acesso**.
+Este repositório contém três serviços da plataforma de delivery, desenvolvidos em Python e FastAPI:
 
-Desenvolvido em **Python** com **FastAPI**.
+| Serviço | Responsabilidade | Porta local |
+|---|---|---:|
+| Autenticação (`autenticacao`) | Credenciais, login OAuth 2.0, emissão e revogação de tokens | 8001 |
+| Perfis (`perfis`) | Cadastro de clientes, lojas, entregadores e administradores | 8002 |
+| Autorização/RBAC (`autorizacao`) | Papéis de usuários e permissões de serviços | 8003 |
 
----
+## Fluxos principais
 
-## 👥 Integrantes
+### Cadastro e login de pessoas
 
-| Nome |
-|------|
-| Marcelo Arthur dos Santos Moura |
-| João Vitor dos Santos Marques |
-| Vinicius Gabriel Santos Bezerra |
-| Kaick José Pita de Mendonça Lopes |
+Perfis recebe os cadastros dos quatro tipos de conta. As credenciais são enviadas ao Auth, que guarda o hash da senha; o papel é associado no RBAC. Clientes, lojas e entregadores começam com o status `PENDENTE_APROVACAO`. O status da conta é separado do estado operacional da loja ou do entregador.
 
----
+O login usa Authorization Code com PKCE. O usuário autentica-se na página do Auth; depois, o aplicativo troca o código e o verificador PKCE por tokens. Antes de emitir ou renovar tokens, Auth consulta o status em Perfis e o papel no RBAC. Só contas `ATIVO` recebem tokens.
 
-## 🧩 Serviços
+Os access tokens de usuário são JWT assinados com RS256 e têm validade de 25 minutos. Claims importantes:
 
-| Serviço | Responsabilidade | Porta (sugestão) |
-|---------|------------------|------------------|
-| **Autenticação** | Login e geração/validação de tokens JWT | `8001` |
-| **Perfis** | Cadastro (CRUD) de clientes e lojas | `8002` |
-| **Autorização** | Gestão de papéis e permissões (RBAC) | `8003` |
+- `sub`: UUID `conta_id`;
+- `role`: `CLIENTE`, `LOJA`, `ENTREGADOR` ou `ADMIN`;
+- `iss`, `aud`, `iat`, `exp` e `jti`.
 
-### Papel na integração
+O Auth publica as chaves públicas em `/.well-known/jwks.json`. Refresh tokens são rotativos e persistidos; o logout revoga a família da sessão. O RBAC oferece `POST /v1/tokens/validar` para conferir o token, a revogação e o papel atual.
 
-```
-           ┌──────────────────────┐
-           │  Serviços das demais │
-           │       equipes        │
-           └──────────┬───────────┘
-                      │  "Este token é válido?"
-                      │  "Este usuário pode fazer X?"
-                      ▼
- ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
- │ Autenticação │◄─┤    Perfis    │  │ Autorização  │
- │    (JWT)     │  │(clientes/    │  │   (RBAC)     │
- │              │  │   lojas)     │  │              │
- └──────────────┘  └──────────────┘  └──────────────┘
-```
+### Tokens para serviços (Client Credentials)
 
----
+O Auth também implementa `grant_type=client_credentials`, com segredo individual por serviço, escopos e audiência. O RBAC mantém a política de permissões; os tokens M2M não têm `role` de usuário nem refresh token. A validade padrão é 10 minutos.
 
-## Arquitetura
+Este fluxo está **desativado por padrão** com `OAUTH_CLIENT_CREDENTIALS_ENABLED=false`. Os contratos de audiência, escopos e claims ainda precisam ser aceitos pelos consumidores antes de habilitá-lo em ambientes compartilhados. RabbitMQ não participa da emissão nem da decisão de autorização. Mais detalhes estão em [Alinhamento Client Credentials](autenticacao/docs/ALINHAMENTO_CLIENT_CREDENTIALS.md).
 
-Cada serviço segue a mesma estrutura, organizada **por domínio** (módulos):
+## Endpoints de referência
 
-```
-projeto/
-├── src/
-│   ├── core/              # Configurações globais, segurança e banco de dados
-│   │   ├── config.py      # Variáveis de ambiente (Pydantic BaseSettings)
-│   │   ├── database.py    # Conexão com o banco (SQLAlchemy / SQLModel / MongoDB)
-│   │   └── security.py    # Funções de JWT, hash de senha, etc.
-│   │
-│   ├── modules/           # Organização por domínio/recurso (ex: users, items)
-│   │   └── users/
-│   │       ├── router.py  # Endpoints específicos do FastAPI (APIRouter)
-│   │       ├── schemas.py # Validação e serialização de dados (Pydantic)
-│   │       ├── models.py  # Modelos/Tabelas do Banco de Dados (ORM)
-│   │       └── service.py # Regras de negócio do domínio
-│   │
-│   ├── api/               # Centralizador de rotas
-│   │   └── router.py      # Agrupa os routers dos módulos
-│   │
-│   └── main.py            # Inicialização da aplicação FastAPI
-│
-├── tests/                 # Testes unitários e de integração (Pytest)
-├── Dockerfile             # Configuração de container
-└── requirements.txt       # Dependências do projeto
+| Serviço | Endpoint | Uso |
+|---|---|---|
+| Auth | `GET /v1/oauth/autorizar` | Inicia o login Authorization Code + PKCE |
+| Auth | `POST /v1/oauth/tokens` | Troca código, renova sessão ou, se habilitado, emite token M2M |
+| Auth | `POST /v1/oauth/revogar` | Revoga uma sessão de usuário |
+| Auth | `GET /.well-known/jwks.json` | Publica as chaves para validar assinaturas JWT |
+| RBAC | `POST /v1/tokens/validar` | Valida token de usuário e confere papel/revogação |
+| RBAC | `POST /v1/tokens/servico/validar` | Valida token M2M e os escopos solicitados |
+
+As rotas internas de consulta de status e permissões são destinadas à comunicação entre serviços. Consulte o Swagger de cada serviço para os schemas e respostas completos.
+
+## Executar localmente
+
+Pré-requisitos: Docker e Docker Compose. O Compose principal lê um `.env` em cada serviço. Copie os exemplos e preencha os valores locais; não coloque segredos reais no Git:
+
+```powershell
+Copy-Item autenticacao/.env.example autenticacao/.env
+Copy-Item perfis/.env.example perfis/.env
+Copy-Item autorizacao/.env.example autorizacao/.env
 ```
 
-### Responsabilidade de cada camada
+Configure os três arquivos com a mesma URL de banco apropriada ao ambiente e alinhe os tokens de serviço entre quem envia e quem recebe cada chamada. Mantenha as chaves JWT fora do repositório. Não use o banco compartilhado para testes destrutivos.
 
-| Camada | Arquivo | O que faz | O que **não** faz |
-|--------|---------|-----------|-------------------|
-| Rota | `router.py` | Recebe a requisição e devolve a resposta | Regra de negócio |
-| Contrato | `schemas.py` | Valida entrada e formata saída (Pydantic) | Acessar o banco |
-| Persistência | `perfil.py` | Define tabelas/coleções | Validar regras |
-| Negócio | `service.py` | Aplica as regras do domínio | Lidar com HTTP |
+Antes de iniciar as APIs, aplique as migrações uma vez em cada serviço, usando a configuração do ambiente correspondente. Para a pilha local isolada e os comandos exatos, siga [Integração local](docs/INTEGRACAO_LOCAL.md). Não rode migrações de teste no banco compartilhado.
 
-Fluxo de uma requisição:
-
-```
-Requisição → router.py → schemas.py (validação) → service.py → models.py → Banco
+```powershell
+docker compose run --rm autenticacao alembic upgrade head
+docker compose run --rm perfis alembic upgrade head
+docker compose run --rm autorizacao python -m alembic upgrade head
 ```
 
----
+Depois, inicie os serviços:
 
-## Convenções da turma (obrigatórias)
-
-Essas regras garantem que as APIs de todas as equipes conversem sem quebrar.
-
-### 1. Idioma do código e das rotas
-Definido em reunião de alinhamento: **`[ PORTUGUÊS | INGLÊS ]`** ← *preencher após a reunião*.
-Nunca misturar idiomas (ex: um serviço envia `user_id` e outro espera `id_usuario`).
-
-### 2. Padrão de resposta de erro
-Todas as APIs devolvem o mesmo formato, com o **código HTTP correto** (400, 401, 403, 404, 500...):
-
-```json
-{
-  "erro": true,
-  "mensagem": "Detalhes da falha"
-}
-```
-
-Exemplo de implementação no FastAPI (`autenticacao/src`):
-
-```python
-from fastapi import FastAPI, HTTPException, Request
-from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
-
-app = FastAPI()
-
-@app.exception_handler(HTTPException)
-async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"erro": True, "mensagem": exc.detail},
-    )
-
-@app.exception_handler(RequestValidationError)
-async def validation_exception_handler(request: Request, exc: RequestValidationError):
-    return JSONResponse(
-        status_code=400,
-        content={"erro": True, "mensagem": "Dados inválidos na requisição"},
-    )
-```
-
-### 3. Data e hora
-Exclusivamente **ISO 8601** em UTC:
-
-```
-✅ "2026-08-24T14:30:00Z"
-❌ "24/08/2026"
-```
-
-### 4. Valores financeiros
-Sempre **inteiros em centavos** — nunca ponto flutuante:
-
-```
-R$ 25,90  →  2590
-```
-
----
-
-## Como executar
-
-### Pré-requisitos
-- [Docker](https://www.docker.com/) e Docker Compose
-
-Nenhuma outra dependência precisa ser instalada localmente.
-
-### Subindo os serviços
-
-Copie o `.env.example` de cada serviço para `.env` e preencha os valores:
-
-   ```bash
-   cp autenticacao/.env.example autenticacao/.env
-   cp perfis/.env.example perfis/.env
-   cp autorizacao/.env.example autorizacao/.env
-   ```
-
-```bash
+```powershell
 docker compose up --build
 ```
 
-### Documentação (Swagger / OpenAPI)
+Swagger/OpenAPI:
 
-Com os serviços rodando, acesse:
+- Auth: <http://localhost:8001/docs>
+- Perfis: <http://localhost:8002/docs>
+- Autorização/RBAC: <http://localhost:8003/docs>
 
-| Serviço | Swagger | ReDoc |
-|---------|---------|-------|
-| Autenticação | http://localhost:8001/docs | http://localhost:8001/redoc |
-| Perfis | http://localhost:8002/docs | http://localhost:8002/redoc |
-| Autorização | http://localhost:8003/docs | http://localhost:8003/redoc |
-
-Todos os contratos devem estar documentados com `response_model`, exemplos e códigos de status, para que outras equipes consigam trabalhar com **mocks** antes da API real ficar pronta.
-
-### Comandos úteis (docker)
-
-```bash
-docker compose up -d              # sobe em segundo plano
-docker compose logs -f perfis     # acompanha os logs de um serviço
-docker compose down               # derruba tudo
-```
-
-### Rodando sem Docker (desenvolvimento)
-
-```bash
-python -m venv .venv
-source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn src.main:app --reload
-```
-
----
-
-## Variáveis de ambiente
-
-Para o serviço de Autenticação, consulte o [guia de configuração, migrações e testes do Auth](autenticacao/README.md).
-
-Crie um arquivo `.env` na raiz de cada serviço (nunca versionar):
-
-```env
-DATABASE_URL=postgresql://usuario:senha@db:5432/identidade
-JWT_SECRET_KEY=troque-esta-chave
-JWT_ALGORITHM=HS256
-JWT_EXPIRE_MINUTES=60
-```
-
----
+As migrações são uma etapa controlada e não são executadas automaticamente ao iniciar as instâncias.
 
 ## Testes
 
-Exigência da disciplina: **cobertura mínima de 75%** (testes unitários e de integração com Pytest).
+Para os testes unitários do Auth, a partir da pasta `autenticacao`:
 
-```bash
-pytest --cov=src --cov-report=term-missing --cov-fail-under=75
+```powershell
+python -m pip install -r requirements.txt
+python -m pip install pytest pytest-cov
+python -m pytest -q --cov=src --cov-report=term-missing --cov-fail-under=75
 ```
 
-Dentro do container:
+Os testes de integração entre Auth, Perfis e RBAC usam um PostgreSQL local descartável. Siga [Integração local](docs/INTEGRACAO_LOCAL.md); não aponte essa composição para o Supabase compartilhado.
 
-```bash
-docker compose exec autenticacao pytest --cov=src --cov-fail-under=75
-```
+A meta do projeto é 80% de cobertura agregada, com mínimo de 75% por serviço conforme os requisitos. A cobertura agregada e sua execução automática em CI ainda precisam ser confirmadas/configuradas.
 
----
- 
-## Tecnologias
- 
-- **Python** 3.12+
-- **FastAPI** `0.142.2` — framework web
-- **Starlette** `1.7.0` — base ASGI do FastAPI (rotas, requisições e respostas)
-- **Pydantic** `2.13.5` — validação e serialização de dados
-- **Uvicorn** `0.54.0` — servidor ASGI que executa a aplicação
-- **OpenTelemetry API** `1.45.0` — instrumentação para rastreamento e observabilidade
-- **Docker / Docker Compose** — conteinerização
-### Dependências (`requirements.txt`)
- 
-```txt
-annotated-doc==0.0.5
-annotated-types==0.8.0
-anyio==4.15.1
-click==8.5.0
-fastapi==0.142.2
-h11==0.16.0
-idna==3.20
-opentelemetry-api==1.45.0
-pydantic==2.13.5
-pydantic_core==2.46.5
-starlette==1.7.0
-typing-inspection==0.4.4
-typing_extensions==4.16.0
-uvicorn==0.54.0
-```
- 
-> As bibliotecas `anyio`, `h11`, `idna`, `click`, `annotated-types`, `pydantic_core`, `typing-inspection` e `typing_extensions` são dependências internas do FastAPI, Pydantic e Uvicorn — não são usadas diretamente no código.
- 
----
+## Documentação por serviço
+
+- [Auth: configuração, migrações e testes](autenticacao/README.md)
+- [Contrato OAuth e tokens](autenticacao/docs/CONTRATO_OAUTH.md)
+- [Rotação das chaves JWT](autenticacao/docs/ROTACAO_CHAVES.md)
+- [Código e Swagger de Perfis](perfis/src/api/router.py)
+- [Autorização/RBAC](autorizacao/README.md)
+- [Integração local dos três serviços](docs/INTEGRACAO_LOCAL.md)
+
+## Pendências conhecidas
+
+- Proteger as rotas administrativas de Perfis com autenticação e autorização adequadas antes de expor o serviço.
+- Definir recuperação/idempotência para falhas parciais no cadastro, que atualmente chama Perfis, Auth e RBAC sem uma transação distribuída.
+- Obter o aceite de Vitor e dos consumidores para os contratos de login, validação JWT/JWKS, audiência, escopos e claims.
+- Testar Client Credentials com um consumidor real da turma; os testes atuais usam um consumidor simulado.
+- Confirmar as migrações e configurações no ambiente compartilhado por procedimento controlado.

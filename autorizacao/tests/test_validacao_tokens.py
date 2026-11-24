@@ -28,6 +28,17 @@ class BancoFalso:
         return self.papel
 
 
+class BancoEscopos:
+    def __init__(self, escopos=None, erro=None):
+        self.escopos = escopos or []
+        self.erro = erro
+
+    def scalars(self, _consulta):
+        if self.erro:
+            raise self.erro
+        return SimpleNamespace(all=lambda: self.escopos)
+
+
 class RespostaFalsa:
     status_code = 200
 
@@ -167,3 +178,90 @@ def test_openapi_documenta_respostas_de_validacao():
     assert "200" in respostas
     assert "401" in respostas
     assert "503" in respostas
+
+
+def test_token_de_servico_e_escopo_atual_sao_validos(monkeypatch):
+    app.dependency_overrides[get_db] = lambda: BancoEscopos(["pagamentos:ler"])
+    monkeypatch.setattr(
+        principal,
+        "_decodificar_token_servico",
+        lambda token, audiencia: {
+            "client_id": "financeiro-worker",
+            "escopos": ["pagamentos:ler", "notificacoes:enviar"],
+        },
+    )
+    cliente = TestClient(app)
+    try:
+        resposta = cliente.post(
+            "/v1/tokens/servico/validar",
+            headers={"Authorization": "Bearer jwt-servico"},
+            json={"audiencia": "https://financeiro.test", "escopos": ["pagamentos:ler"]},
+        )
+        assert resposta.status_code == 200
+        assert resposta.json() == {
+            "ativo": True,
+            "client_id": "financeiro-worker",
+            "audiencia": "https://financeiro.test",
+            "escopos": ["pagamentos:ler"],
+        }
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_token_de_servico_rejeita_escopo_ausente_ou_revogado(monkeypatch):
+    app.dependency_overrides[get_db] = lambda: BancoEscopos(["pagamentos:ler"])
+    monkeypatch.setattr(
+        principal,
+        "_decodificar_token_servico",
+        lambda *_: {"client_id": "worker", "escopos": ["pagamentos:ler"]},
+    )
+    cliente = TestClient(app)
+    try:
+        nao_no_token = cliente.post(
+            "/v1/tokens/servico/validar",
+            headers={"Authorization": "Bearer jwt"},
+            json={"audiencia": "https://financeiro.test", "escopos": ["pagamentos:escrever"]},
+        )
+        assert nao_no_token.status_code == 403
+        app.dependency_overrides[get_db] = lambda: BancoEscopos([])
+        removido_no_rbac = cliente.post(
+            "/v1/tokens/servico/validar",
+            headers={"Authorization": "Bearer jwt"},
+            json={"audiencia": "https://financeiro.test", "escopos": ["pagamentos:ler"]},
+        )
+        assert removido_no_rbac.status_code == 403
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_token_de_servico_trata_jwks_indisponivel_com_503(monkeypatch):
+    app.dependency_overrides[get_db] = lambda: BancoEscopos(["pagamentos:ler"])
+    monkeypatch.setattr(
+        principal,
+        "_decodificar_token_servico",
+        lambda *_: (_ for _ in ()).throw(principal.PyJWKClientConnectionError("offline")),
+    )
+    cliente = TestClient(app)
+    try:
+        resposta = cliente.post(
+            "/v1/tokens/servico/validar",
+            headers={"Authorization": "Bearer jwt"},
+            json={"audiencia": "https://financeiro.test", "escopos": ["pagamentos:ler"]},
+        )
+        assert resposta.status_code == 503
+        assert resposta.json() == {
+            "erro": True,
+            "mensagem": "Chaves públicas da Identidade indisponíveis",
+        }
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_rejeita_jwt_de_usuario_no_validador_de_servico(monkeypatch):
+    monkeypatch.setattr(
+        principal.jwt,
+        "get_unverified_header",
+        lambda *_: {"typ": "at+jwt", "alg": "HS256"},
+    )
+    monkeypatch.setattr(principal, "_cliente_jwks", lambda *_: None)
+    assert principal._decodificar_token_servico("token", "https://financeiro.test") is None

@@ -1,16 +1,21 @@
+from functools import lru_cache
 import secrets
 from typing import Literal
 from uuid import UUID
+import re
 
 import httpx
-from fastapi import Depends, FastAPI, Header, HTTPException
-from pydantic import BaseModel
+import jwt
+from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from jwt import PyJWKClient, PyJWKClientConnectionError, PyJWKClientError
+from pydantic import BaseModel, Field
+from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
 
 from src.core.database import get_db, settings
-from src.modules.papeis import PapelConta
+from src.modules.papeis import PapelConta, PermissaoClienteServico
 
 PAPEIS = {"CLIENTE", "LOJA", "ENTREGADOR", "ADMIN"}
 
@@ -53,6 +58,113 @@ class TokenValidado(BaseModel):
 class ErroValidacao(BaseModel):
     erro: bool
     mensagem: str
+
+
+class TokenServicoRequest(BaseModel):
+    audiencia: str = Field(min_length=1, max_length=500)
+    escopos: list[str] = Field(min_length=1, max_length=50)
+
+
+class TokenServicoValidado(BaseModel):
+    ativo: bool
+    client_id: str
+    audiencia: str
+    escopos: list[str]
+
+
+@lru_cache(maxsize=1)
+def _cliente_jwks(url: str) -> PyJWKClient:
+    return PyJWKClient(url, cache_jwk_set=True, lifespan=300)
+
+
+def _decodificar_token_servico(token: str, audiencia: str) -> dict | None:
+    cabecalho = jwt.get_unverified_header(token)
+    if cabecalho.get("typ") != "at+jwt" or cabecalho.get("alg") != "RS256":
+        return None
+    jwks_url = f"{settings.AUTHENTICACAO_URL.rstrip('/')}/.well-known/jwks.json"
+    chave = _cliente_jwks(jwks_url).get_signing_key_from_jwt(token).key
+    claims = jwt.decode(
+        token,
+        chave,
+        algorithms=["RS256"],
+        issuer=settings.AUTHENTICACAO_ISSUER,
+        audience=audiencia,
+        options={"require": ["iss", "sub", "aud", "iat", "exp", "jti", "client_id", "scope"]},
+    )
+    client_id = claims.get("client_id")
+    scopes = claims.get("scope")
+    if (
+        not isinstance(client_id, str)
+        or claims.get("sub") != f"servico:{client_id}"
+        or not isinstance(scopes, str)
+        or "role" in claims
+        or "sid" in claims
+    ):
+        return None
+    escopos = scopes.split()
+    if not escopos or any(not re.fullmatch(r"[!-~]+", item) for item in escopos):
+        return None
+    return {"client_id": client_id, "escopos": escopos}
+
+
+@app.post(
+    "/v1/tokens/servico/validar",
+    response_model=TokenServicoValidado,
+    summary="Validar escopos de token de serviço",
+    description=(
+        "Valida localmente a assinatura RS256 via JWKS, issuer, audiência e expiração; "
+        "confere os escopos pedidos com o token e com a política atual do RBAC."
+    ),
+    responses={
+        401: {"model": ErroValidacao, "description": "Token de serviço inválido ou expirado"},
+        403: {"model": ErroValidacao, "description": "Escopo não autorizado"},
+        503: {"model": ErroValidacao, "description": "JWKS ou PostgreSQL indisponível"},
+    },
+)
+def validar_token_servico(
+    dados: TokenServicoRequest,
+    authorization: str | None = Header(default=None),
+    db: Session = Depends(get_db),
+):
+    esquema, separador, token = (authorization or "").partition(" ")
+    if esquema.lower() != "bearer" or not separador or not token.strip():
+        return _erro(401, "Token de serviço inválido ou expirado")
+    if len(set(dados.escopos)) != len(dados.escopos):
+        return _erro(400, "Escopo repetido")
+    if any(not re.fullmatch(r"[!-~]+", item) for item in dados.escopos):
+        return _erro(400, "Formato de escopo inválido")
+
+    try:
+        claims = _decodificar_token_servico(token.strip(), dados.audiencia)
+    except (PyJWKClientConnectionError, httpx.HTTPError, OSError):
+        return _erro(503, "Chaves públicas da Identidade indisponíveis")
+    except (PyJWKClientError, jwt.PyJWTError, ValueError, TypeError):
+        return _erro(401, "Token de serviço inválido ou expirado")
+    if claims is None:
+        return _erro(401, "Token de serviço inválido ou expirado")
+
+    escopos_token = set(claims["escopos"])
+    if not set(dados.escopos).issubset(escopos_token):
+        return _erro(403, "Escopo não autorizado")
+    try:
+        escopos_atuais = set(
+            db.scalars(
+                select(PermissaoClienteServico.escopo).where(
+                    PermissaoClienteServico.client_id == claims["client_id"],
+                    PermissaoClienteServico.audiencia == dados.audiencia,
+                )
+            ).all()
+        )
+    except SQLAlchemyError:
+        return _erro(503, "Serviço de Autorização indisponível")
+    if not set(dados.escopos).issubset(escopos_atuais):
+        return _erro(403, "Escopo não autorizado")
+    return {
+        "ativo": True,
+        "client_id": claims["client_id"],
+        "audiencia": dados.audiencia,
+        "escopos": dados.escopos,
+    }
 
 
 @app.post(
@@ -136,6 +248,28 @@ def consultar_papel(
     if papel is None:
         raise HTTPException(404, "Papel não associado")
     return {"conta_id": str(papel.conta_id), "role": papel.role}
+
+
+@app.get("/v1/interno/clientes/{client_id}/permissoes")
+def consultar_permissoes_cliente_servico(
+    client_id: str,
+    audiencia: str = Query(min_length=1, max_length=500),
+    _auth: None = Depends(autenticar_auth),
+    db: Session = Depends(get_db),
+):
+    permissoes = db.scalars(
+        select(PermissaoClienteServico.escopo)
+        .where(
+            PermissaoClienteServico.client_id == client_id,
+            PermissaoClienteServico.audiencia == audiencia,
+        )
+        .order_by(PermissaoClienteServico.escopo)
+    ).all()
+    return {
+        "client_id": client_id,
+        "audiencia": audiencia,
+        "escopos": permissoes,
+    }
 
 
 @app.put("/v1/interno/contas/{conta_id}/papel")

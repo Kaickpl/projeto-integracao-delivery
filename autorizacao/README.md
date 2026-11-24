@@ -28,7 +28,10 @@ Em um banco de testes isolado, `upgrade head` cria `autorizacao.papeis_conta` e 
 
 - `GET /v1/interno/contas/{conta_id}/papel`: consulta autenticada pelo token de serviço do Auth.
 - `PUT /v1/interno/contas/{conta_id}/papel`: associação/atualização autenticada pelo token de serviço de Perfis.
+- `POST /v1/tokens/validar`: valida o access token recebido em `Authorization: Bearer` por introspecção online no Auth e confere se o papel continua igual ao vínculo atual no RBAC. Tokens inválidos, expirados, revogados ou com papel desatualizado retornam `401` no formato `{"erro": true, "mensagem": "..."}`. Indisponibilidade do Auth ou do PostgreSQL retorna `503`.
 - `GET /health`: verificação simples de disponibilidade.
+
+O endpoint de validação falha fechado: o Auth precisa confirmar a sessão no PostgreSQL compartilhado antes de o RBAC aceitar o token. A credencial de serviço do RBAC para chamar Auth deve corresponder a `AUTORIZACAO_SERVICE_TOKEN` no Auth.
 
 ## Testes
 

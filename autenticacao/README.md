@@ -7,8 +7,9 @@ O Auth mantém credenciais, códigos de autorização e sessões de refresh no s
 - `GET /v1/oauth/autorizar` inicia Authorization Code + PKCE e mostra a página de autenticação hospedada no Auth.
 - `POST /v1/oauth/entrar` recebe o formulário dessa página. O aplicativo cliente não coleta nem envia senha ao Auth em seu próprio endpoint.
 - `POST /v1/oauth/tokens` troca o código de uso único por tokens ou rotaciona um refresh token. O corpo é `application/x-www-form-urlencoded`.
-- `POST /v1/oauth/revogar` recebe `token` como formulário e revoga a família correspondente quando for um refresh token válido. A resposta `200` não revela se o token era conhecido.
-- `POST /v1/oauth/introspeccao` confirma estado de sessão e exige credencial de serviço de Autorização/RBAC.
+- `POST /v1/oauth/revogar` segue o formato de formulário RFC 7009. Aceita um refresh token ou access token assinado e revoga a família inteira da sessão; sucesso idempotente não revela se o token era conhecido. Falha de persistência retorna `503`.
+- `POST /v1/oauth/introspeccao` confirma estado de sessão e devolve `active`, `sub`, `jti` e `role`; exige credencial de serviço de Autorização/RBAC.
+- O RBAC expõe `POST /v1/tokens/validar`: recebe o access token em `Authorization: Bearer`, confirma revogação online no Auth e confere o papel atual antes de devolver `ativo`, `conta_id` e `role`. Token inválido/revogado retorna `401`; dependência indisponível retorna `503`.
 - `GET /.well-known/jwks.json` publica as chaves públicas RS256 atuais e anteriores.
 - `GET /.well-known/oauth-authorization-server` publica os metadados e grants habilitados.
 
@@ -21,7 +22,7 @@ O grant de senha (`password`) não é aceito no endpoint de tokens. A senha é s
 1. Copie `.env.example` para `.env` e configure `DATABASE_URL`, caminhos da chave privada RS256 e credenciais serviço a serviço.
 2. A chave privada JWT deve ficar fora do Git. O `.env.example` contém somente placeholders.
 3. `PERFIS_SERVICE_TOKEN` deve corresponder ao token usado por Perfis ao criar credenciais. `AUTORIZACAO_SERVICE_TOKEN` autentica a consulta de papel e introspecção.
-4. Defina `PERFIS_URL`, `AUTORIZACAO_URL`, `OAUTH_CLIENT_ID`, `OAUTH_REDIRECT_URI`, `JWT_ISSUER` e `JWT_AUDIENCE` conforme o ambiente.
+4. Defina `PERFIS_URL`, `AUTORIZACAO_URL`, `OAUTH_CLIENT_ID`, `OAUTH_REDIRECT_URI`, `JWT_ISSUER` e `JWT_AUDIENCE` conforme o ambiente. No RBAC, configure `AUTHENTICACAO_URL` e `AUTHENTICACAO_SERVICE_TOKEN` para a introspecção online.
 
 `PERFIS_STATUS_SERVICE_TOKEN` autentica Auth ao consultar status em Perfis. Ele deve corresponder a `INTERNAL_SERVICE_TOKEN` de Perfis. `PERFIS_SERVICE_TOKEN` autentica Perfis ao criar credenciais em Auth e deve corresponder a `AUTENTICACAO_SERVICE_TOKEN` de Perfis. Mantenha valores distintos para cada direção.
 

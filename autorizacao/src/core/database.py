@@ -12,6 +12,8 @@ class Settings(BaseSettings):
     DATABASE_URL: str
     INTERNAL_SERVICE_TOKEN: SecretStr = SecretStr("")
     AUTHENTICACAO_SERVICE_TOKEN: SecretStr = SecretStr("")
+    AUTHENTICACAO_URL: str = "http://autenticacao:8001"
+    INTEGRATION_TIMEOUT_SECONDS: float = 2.0
 
     model_config = SettingsConfigDict(
         env_file=Path(__file__).resolve().parents[2] / ".env",

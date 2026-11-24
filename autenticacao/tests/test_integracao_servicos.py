@@ -1,10 +1,14 @@
 """Teste ponta a ponta contra Auth, Perfis e RBAC locais e isolados."""
 import base64
+from concurrent.futures import ThreadPoolExecutor
 import hashlib
 import os
 import re
 import secrets
+import subprocess
+import time
 import uuid
+from pathlib import Path
 from urllib.parse import parse_qs, urlsplit
 
 import httpx
@@ -98,6 +102,40 @@ def _introspeccionar(client: httpx.Client, auth_url: str, token: str, cabecalho:
     return resposta.json()
 
 
+def _validar_no_rbac(client: httpx.Client, rbac_url: str, token: str) -> httpx.Response:
+    return client.post(
+        f"{rbac_url}/v1/tokens/validar",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+
+def _reiniciar_replica_auth_e_aguardar(url: str) -> None:
+    raiz = Path(__file__).resolve().parents[2]
+    subprocess.run(
+        [
+            "docker",
+            "compose",
+            "-f",
+            str(raiz / "Docker-compose.integracao.yml"),
+            "restart",
+            "autenticacao_replica",
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+        timeout=30,
+    )
+    limite = time.monotonic() + 30
+    while time.monotonic() < limite:
+        try:
+            if httpx.get(f"{url}/health", timeout=1).status_code == 200:
+                return
+        except httpx.HTTPError:
+            pass
+        time.sleep(0.5)
+    raise AssertionError("A réplica do Auth não voltou após o reinício")
+
+
 def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
     bases = _ambiente_integracao()
     auth_url, perfis_url, rbac_url = bases["AUTH"], bases["PERFIS"], bases["RBAC"]
@@ -179,6 +217,9 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
         assert claims["exp"] - claims["iat"] == 25 * 60
         introspeccao_headers = {"Authorization": f"Bearer {token_rbac}"}
         assert _introspeccionar(client, auth_url, primeiro["access_token"], introspeccao_headers)["active"]
+        validacao_rbac = _validar_no_rbac(client, rbac_url, primeiro["access_token"])
+        assert validacao_rbac.status_code == 200, validacao_rbac.text
+        assert validacao_rbac.json()["role"] == "CLIENTE"
 
         refresh1 = primeiro["refresh_token"]
         renovado = client.post(
@@ -208,3 +249,81 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
         assert not _introspeccionar(
             client, auth_url, segunda_sessao["access_token"], introspeccao_headers
         )["active"]
+
+        validacao_revogado = _validar_no_rbac(
+            client, rbac_url, segunda_sessao["access_token"]
+        )
+        assert validacao_revogado.status_code == 401
+        assert validacao_revogado.json() == {
+            "erro": True,
+            "mensagem": "Token inválido, expirado ou revogado",
+        }
+
+        terceira_sessao = _autenticar(client, auth_url, email, senha)
+        logout_por_access_token = client.post(
+            f"{bases['AUTH_REPLICA']}/v1/oauth/revogar",
+            data={
+                "token": terceira_sessao["access_token"],
+                "token_type_hint": "access_token",
+            },
+        )
+        assert logout_por_access_token.status_code == 200
+        logout_repetido = client.post(
+            f"{bases['AUTH']}/v1/oauth/revogar",
+            data={"token": terceira_sessao["refresh_token"]},
+        )
+        assert logout_repetido.status_code == 200
+        renovacao_apos_logout = client.post(
+            f"{auth_url}/v1/oauth/tokens",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": terceira_sessao["refresh_token"],
+            },
+        )
+        assert renovacao_apos_logout.status_code == 401
+        assert _validar_no_rbac(
+            client, rbac_url, terceira_sessao["access_token"]
+        ).status_code == 401
+
+        sessao_concorrente = _autenticar(client, auth_url, email, senha)
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            renovacao_futura = executor.submit(
+                httpx.post,
+                f"{auth_url}/v1/oauth/tokens",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": sessao_concorrente["refresh_token"],
+                },
+                timeout=10,
+            )
+            logout_futuro = executor.submit(
+                httpx.post,
+                f"{bases['AUTH_REPLICA']}/v1/oauth/revogar",
+                data={"token": sessao_concorrente["refresh_token"]},
+                timeout=10,
+            )
+            renovacao_concorrente = renovacao_futura.result()
+            logout_concorrente = logout_futuro.result()
+        assert logout_concorrente.status_code == 200
+        assert renovacao_concorrente.status_code in {200, 401}
+        assert _validar_no_rbac(
+            client, rbac_url, sessao_concorrente["access_token"]
+        ).status_code == 401
+        if renovacao_concorrente.status_code == 200:
+            assert _validar_no_rbac(
+                client, rbac_url, renovacao_concorrente.json()["access_token"]
+            ).status_code == 401
+
+        if os.getenv("INTEGRATION_RESTART_AUTH_REPLICA") == "1":
+            _reiniciar_replica_auth_e_aguardar(bases["AUTH_REPLICA"])
+            refresh_apos_reinicio = client.post(
+                f"{bases['AUTH_REPLICA']}/v1/oauth/tokens",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": terceira_sessao["refresh_token"],
+                },
+            )
+            assert refresh_apos_reinicio.status_code == 401
+            assert _validar_no_rbac(
+                client, rbac_url, terceira_sessao["access_token"]
+            ).status_code == 401

@@ -16,6 +16,7 @@ Rode cada migração como etapa controlada, antes das APIs:
 
 ```powershell
 docker compose -f Docker-compose.integracao.yml run --rm autenticacao alembic upgrade head
+docker compose -f Docker-compose.integracao.yml run --rm perfis alembic upgrade e5a9b3c7f1d2
 docker compose -f Docker-compose.integracao.yml run --rm perfis alembic upgrade head
 docker compose -f Docker-compose.integracao.yml run --rm autorizacao python -m alembic upgrade head
 ```
@@ -51,7 +52,9 @@ $env:INTEGRATION_RBAC_TOKEN = "teste-auth-rbac"
 python -m pytest tests/test_integracao_servicos.py -q
 ```
 
-O teste cria um cliente com CPF válido aleatório, verifica que o status pendente impede a autorização, ativa a conta no ambiente descartável, consulta o papel no RBAC, conclui Authorization Code + PKCE, valida assinatura e claims via JWKS, emite a sessão em uma instância Auth e renova/revoga em outra com a mesma persistência, tenta reutilizar o refresh anterior e verifica introspecção. O endpoint de perfil administrativo usado para ativar a conta não deve ser exposto sem autorização fora deste ambiente.
+Para incluir o teste de persistência após reiniciar uma instância Auth, antes do `pytest` defina `$env:INTEGRATION_RESTART_AUTH_REPLICA = "1"`. O teste reinicia somente `autenticacao_replica`, espera o health check e verifica que o refresh revogado segue inválido e que o RBAC continua retornando `401`.
+
+O teste cria um cliente com CPF válido aleatório, verifica que o status pendente impede a autorização, ativa a conta no ambiente descartável, consulta o papel no RBAC, conclui Authorization Code + PKCE, valida assinatura e claims via JWKS, verifica o access token no endpoint RBAC, renova e revoga em outra instância Auth com a mesma persistência, tenta reutilizar o refresh anterior e confirma que o RBAC retorna `401` após a revogação. Também testa logout com access token e confirma que o refresh da família deixa de funcionar. O endpoint de perfil administrativo usado para ativar a conta não deve ser exposto sem autorização fora deste ambiente.
 
 ## Encerrar e descartar o banco local
 

@@ -6,8 +6,9 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from src.core.database import get_db
 from src.modules.oauth import service
@@ -18,7 +19,12 @@ router = APIRouter(prefix="/v1", tags=["OAuth e autenticação"])
 
 
 class IntrospeccaoRequest(BaseModel):
-    token: str
+    token: str = Field(min_length=1, max_length=8192)
+
+
+class ErroOAuth(BaseModel):
+    erro: bool
+    mensagem: str
 
 
 class CredencialInterna(BaseModel):
@@ -137,12 +143,38 @@ def token(
     raise HTTPException(400, "grant_type inválido")
 
 
-@router.post("/oauth/revogar", status_code=200)
+@router.post(
+    "/oauth/revogar",
+    status_code=200,
+    summary="Revogar sessão OAuth",
+    description=(
+        "Aceita um refresh token ou access token assinado e revoga a família "
+        "inteira da sessão. O resultado não revela se o token era conhecido."
+    ),
+    responses={
+        503: {"model": ErroOAuth, "description": "A revogação não pôde ser persistida"},
+    },
+)
 def revogar(
-    token: str = Form(...),
+    token: str = Form(..., min_length=1, max_length=8192),
+    token_type_hint: str | None = Form(default=None, max_length=100),
     db: Session = Depends(get_db),
 ):
-    return service.revogar(db, token)
+    # RFC 7009 permite ignorar uma indicação de tipo desconhecida. O serviço
+    # identifica refresh tokens opacos e access tokens assinados pela própria
+    # sessão, sem revelar se o valor recebido era conhecido.
+    del token_type_hint
+    try:
+        return service.revogar(db, token)
+    except SQLAlchemyError:
+        try:
+            db.rollback()
+        except SQLAlchemyError:
+            pass
+        return JSONResponse(
+            status_code=503,
+            content={"erro": True, "mensagem": "Não foi possível confirmar a revogação"},
+        )
 
 
 @router.post("/oauth/introspeccao")

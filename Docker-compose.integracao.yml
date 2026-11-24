@@ -1,0 +1,123 @@
+# Pilha local descartável. Não usa os arquivos .env nem o Supabase da turma.
+name: integracao-local-teste
+
+services:
+  preparar_chave_teste:
+    build: ./autenticacao
+    working_dir: /code
+    user: "0:0"
+    command: sh -c "python tests/preparar_chave_integracao.py && chmod -R a+rX /tmp/chaves-jwt"
+    environment:
+      JWT_PRIVATE_KEY_PATH: /tmp/chaves-jwt/chave-privada.pem
+    volumes:
+      - chaves_jwt_teste:/tmp/chaves-jwt
+
+  banco_integracao:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: delivery_teste
+      POSTGRES_USER: integracao_teste
+      POSTGRES_PASSWORD: integracao_teste_local
+    ports:
+      - "55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U integracao_teste -d delivery_teste"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  autenticacao:
+    build: ./autenticacao
+    working_dir: /code
+    command: sh -c "python tests/preparar_chave_integracao.py && uvicorn src.main:app --host 0.0.0.0 --port 8001"
+    ports:
+      - "18001:8001"
+    environment:
+      DATABASE_URL: postgresql+psycopg://integracao_teste:integracao_teste_local@banco_integracao:5432/delivery_teste
+      JWT_PRIVATE_KEY_PATH: /tmp/chaves-jwt/chave-privada.pem
+      JWT_OLD_PUBLIC_KEYS_DIR: /tmp/chaves-jwt/anteriores
+      JWT_KEY_ID: chave-integracao-local
+      JWT_ISSUER: http://127.0.0.1:18001
+      JWT_ACCESS_TOKEN_MINUTES: "25"
+      JWT_AUDIENCE: delivery-api
+      OAUTH_CLIENT_ID: delivery-app
+      OAUTH_REDIRECT_URI: http://localhost:3000/oauth/callback
+      PERFIS_URL: http://perfis:8002
+      PERFIS_STATUS_SERVICE_TOKEN: teste-auth-perfis
+      PERFIS_SERVICE_TOKEN: teste-perfis-auth
+      AUTORIZACAO_URL: http://autorizacao:8003
+      AUTORIZACAO_SERVICE_TOKEN: teste-auth-rbac
+      INTEGRATION_TIMEOUT_SECONDS: "2"
+    volumes:
+      - chaves_jwt_teste:/tmp/chaves-jwt
+    depends_on:
+      banco_integracao:
+        condition: service_healthy
+      preparar_chave_teste:
+        condition: service_completed_successfully
+
+  autenticacao_replica:
+    build: ./autenticacao
+    working_dir: /code
+    command: sh -c "python tests/preparar_chave_integracao.py && uvicorn src.main:app --host 0.0.0.0 --port 8001"
+    ports:
+      - "18004:8001"
+    environment:
+      DATABASE_URL: postgresql+psycopg://integracao_teste:integracao_teste_local@banco_integracao:5432/delivery_teste
+      JWT_PRIVATE_KEY_PATH: /tmp/chaves-jwt/chave-privada.pem
+      JWT_OLD_PUBLIC_KEYS_DIR: /tmp/chaves-jwt/anteriores
+      JWT_KEY_ID: chave-integracao-local
+      JWT_ISSUER: http://127.0.0.1:18001
+      JWT_ACCESS_TOKEN_MINUTES: "25"
+      JWT_AUDIENCE: delivery-api
+      OAUTH_CLIENT_ID: delivery-app
+      OAUTH_REDIRECT_URI: http://localhost:3000/oauth/callback
+      PERFIS_URL: http://perfis:8002
+      PERFIS_STATUS_SERVICE_TOKEN: teste-auth-perfis
+      PERFIS_SERVICE_TOKEN: teste-perfis-auth
+      AUTORIZACAO_URL: http://autorizacao:8003
+      AUTORIZACAO_SERVICE_TOKEN: teste-auth-rbac
+      INTEGRATION_TIMEOUT_SECONDS: "2"
+    volumes:
+      - chaves_jwt_teste:/tmp/chaves-jwt
+    depends_on:
+      banco_integracao:
+        condition: service_healthy
+      preparar_chave_teste:
+        condition: service_completed_successfully
+
+  perfis:
+    build: ./perfis
+    working_dir: /code
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8002
+    ports:
+      - "18002:8002"
+    environment:
+      DATABASE_URL: postgresql+psycopg://integracao_teste:integracao_teste_local@banco_integracao:5432/delivery_teste
+      INTERNAL_SERVICE_TOKEN: teste-auth-perfis
+      AUTENTICACAO_URL: http://autenticacao:8001
+      AUTENTICACAO_SERVICE_TOKEN: teste-perfis-auth
+      AUTORIZACAO_URL: http://autorizacao:8003
+      AUTORIZACAO_SERVICE_TOKEN: teste-perfis-rbac
+      VIACEP_URL: http://127.0.0.1:9/ws
+      VIACEP_TIMEOUT: "1"
+    depends_on:
+      banco_integracao:
+        condition: service_healthy
+
+  autorizacao:
+    build: ./autorizacao
+    working_dir: /code
+    command: uvicorn src.main:app --host 0.0.0.0 --port 8003
+    ports:
+      - "18003:8003"
+    environment:
+      DATABASE_URL: postgresql+psycopg://integracao_teste:integracao_teste_local@banco_integracao:5432/delivery_teste
+      INTERNAL_SERVICE_TOKEN: teste-perfis-rbac
+      AUTHENTICACAO_SERVICE_TOKEN: teste-auth-rbac
+    depends_on:
+      banco_integracao:
+        condition: service_healthy
+
+volumes:
+  chaves_jwt_teste:

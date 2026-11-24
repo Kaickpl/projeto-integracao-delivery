@@ -1,5 +1,7 @@
 # Persistência de credenciais do Auth
 
+O contrato proposto de OAuth 2.0, access tokens, JWKS, refresh, revogação e integração com Perfis/RBAC está em [`docs/CONTRATO_OAUTH.md`](docs/CONTRATO_OAUTH.md). Os rascunhos das issues do Marcelo estão em [`docs/ISSUES_MARCELO.md`](docs/ISSUES_MARCELO.md). O contrato documenta o fluxo; os endpoints OAuth ainda não foram implementados.
+
 O Auth usa o PostgreSQL do Supabase com SQLAlchemy e Psycopg 3. A autenticação permanece neste serviço. A tabela `autenticacao.credenciais` e o histórico `autenticacao.alembic_version` ficam no schema `autenticacao`, separado das tabelas de Perfis e do schema reservado `auth` do Supabase. Mantenha `autenticacao` fora dos schemas expostos pela Data API.
 
 ## Configuração

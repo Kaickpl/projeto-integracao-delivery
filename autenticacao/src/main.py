@@ -1,4 +1,6 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 from src.core.config import Settings
 from src.core.tokens import documento_jwks
@@ -6,6 +8,16 @@ from src.modules.oauth.router import router as oauth_router
 
 app = FastAPI()
 app.include_router(oauth_router)
+
+
+@app.exception_handler(RequestValidationError)
+async def erro_de_validacao(request: Request, exc: RequestValidationError):
+    # O campo input pode conter uma senha ou o corpo inteiro da requisição.
+    detalhes = [
+        {"loc": erro["loc"], "type": erro["type"], "msg": erro["msg"]}
+        for erro in exc.errors()
+    ]
+    return JSONResponse(status_code=422, content={"detail": detalhes})
 
 
 @app.get("/")

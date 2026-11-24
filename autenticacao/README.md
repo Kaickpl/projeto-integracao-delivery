@@ -1,60 +1,52 @@
-# Persistência de credenciais do Auth
+# Serviço de Autenticação
 
-O contrato proposto de OAuth 2.0, access tokens, JWKS, refresh, revogação e integração com Perfis/RBAC está em [`docs/CONTRATO_OAUTH.md`](docs/CONTRATO_OAUTH.md). Os rascunhos das issues do Marcelo estão em [`docs/ISSUES_MARCELO.md`](docs/ISSUES_MARCELO.md). O contrato documenta o fluxo; os endpoints OAuth ainda não foram implementados.
+O Auth mantém credenciais, códigos de autorização e sessões de refresh no schema PostgreSQL `autenticacao`. A senha é guardada somente como hash Argon2id. O serviço consulta o status em Perfis e a associação de papel em Autorização/RBAC antes de autorizar uma sessão.
 
-O Auth usa o PostgreSQL do Supabase com SQLAlchemy e Psycopg 3. A autenticação permanece neste serviço. A tabela `autenticacao.credenciais` e o histórico `autenticacao.alembic_version` ficam no schema `autenticacao`, separado das tabelas de Perfis e do schema reservado `auth` do Supabase. Mantenha `autenticacao` fora dos schemas expostos pela Data API.
+## OAuth 2.0 implementado
+
+- `GET /v1/oauth/autorizar` inicia Authorization Code + PKCE e mostra a página de autenticação hospedada no Auth.
+- `POST /v1/oauth/entrar` recebe o formulário dessa página. O aplicativo cliente não coleta nem envia senha ao Auth em seu próprio endpoint.
+- `POST /v1/oauth/tokens` troca o código de uso único por tokens ou rotaciona um refresh token. O corpo é `application/x-www-form-urlencoded`.
+- `POST /v1/oauth/revogar` recebe `token` como formulário e revoga a família correspondente quando for um refresh token válido. A resposta `200` não revela se o token era conhecido.
+- `POST /v1/oauth/introspeccao` confirma estado de sessão e exige credencial de serviço de Autorização/RBAC.
+- `GET /.well-known/jwks.json` publica as chaves públicas RS256 atuais e anteriores.
+- `GET /.well-known/oauth-authorization-server` publica os metadados e grants habilitados.
+
+O access token usa `typ=at+jwt`, `kid`, `iss`, `sub` UUID, `aud`, `iat`, `exp`, `jti`, `client_id` e `role`, com validade de 25 minutos. O papel vem da consulta interna ao RBAC. Refresh tokens são opacos, armazenados somente como hash, rotacionados em uso e compartilhados pelo PostgreSQL para múltiplas instâncias.
+
+O grant de senha (`password`) não é aceito no endpoint de tokens. A senha é submetida apenas ao formulário hospedado pelo Auth, no caminho separado `/v1/oauth/entrar`. Client Credentials ainda não está habilitado nos metadados nem no endpoint de tokens.
 
 ## Configuração
 
-1. Na pasta `autenticacao`, copie `.env.example` para `.env`. Guarde o arquivo localmente e fora do Git, das issues e dos logs.
-2. No painel do Supabase, abra **Connect** e copie o usuário, o host, a porta e o banco da modalidade escolhida. Troque o prefixo `postgresql://` por `postgresql+psycopg://` e aplique codificação de URL aos caracteres reservados da senha.
-3. Use SSL com `sslmode=require`. Para também verificar a identidade do servidor, use `sslmode=verify-full` com `sslrootcert` apontando para o certificado raiz baixado no painel.
+1. Copie `.env.example` para `.env` e configure `DATABASE_URL`, caminhos da chave privada RS256 e credenciais serviço a serviço.
+2. A chave privada JWT deve ficar fora do Git. O `.env.example` contém somente placeholders.
+3. `PERFIS_SERVICE_TOKEN` deve corresponder ao token usado por Perfis ao criar credenciais. `AUTORIZACAO_SERVICE_TOKEN` autentica a consulta de papel e introspecção.
+4. Defina `PERFIS_URL`, `AUTORIZACAO_URL`, `OAUTH_CLIENT_ID`, `OAUTH_REDIRECT_URI`, `JWT_ISSUER` e `JWT_AUDIENCE` conforme o ambiente.
 
-| Uso | Conexão |
-| --- | --- |
-| API persistente (Docker, por exemplo) | Direta na porta 5432 quando acessível, ou **Session pooler** na porta 5432 para redes só com IPv4. |
-| Migrações | Preferir a conexão direta na porta 5432. Usar **Session pooler** na porta 5432 quando a direta estiver inacessível. |
+`PERFIS_STATUS_SERVICE_TOKEN` autentica Auth ao consultar status em Perfis. Ele deve corresponder a `INTERNAL_SERVICE_TOKEN` de Perfis. `PERFIS_SERVICE_TOKEN` autentica Perfis ao criar credenciais em Auth e deve corresponder a `AUTENTICACAO_SERVICE_TOKEN` de Perfis. Mantenha valores distintos para cada direção.
 
-Use os valores exibidos pelo painel. Usuário e host da conexão direta e do pooler são diferentes. O pooler compartilhado em modo transação, na porta 6543, tem restrições com *prepared statements* e fica fora desta configuração. Cada processo da API mantém seu próprio pool SQLAlchemy. Ao aumentar o número de réplicas da API, considere o total de conexões que o banco aceita. Veja a [documentação de conexões do Supabase](https://supabase.com/docs/guides/database/connecting-to-postgres).
+O procedimento de troca de chave está em [`docs/ROTACAO_CHAVES.md`](docs/ROTACAO_CHAVES.md).
 
 ## Migrações
 
-Execute uma vez por atualização, em uma etapa controlada antes de iniciar as réplicas. O processo de migração precisa criar o schema `autenticacao` na primeira execução e gerenciar suas tabelas. Se a equipe usar papéis separados no PostgreSQL, conceda ao papel da API apenas acesso ao schema e às operações necessárias na tabela de credenciais.
+Execute Alembic uma vez por implantação, de forma controlada, antes de iniciar ou escalar as instâncias:
 
-Com Python 3.12+ e o ambiente virtual ativo, rode dentro de `autenticacao`:
-
-```bash
+```powershell
 python -m pip install -r requirements.txt
-alembic upgrade head
-alembic current
+python -m alembic upgrade head
+python -m alembic current
 ```
 
-Com Docker Compose, rode na raiz do projeto depois de preparar o `.env`:
-
-```bash
-docker compose -f Docker-compose.yml build autenticacao
-docker compose -f Docker-compose.yml run --rm --no-deps autenticacao alembic upgrade head
-```
-
-## Uso dentro do Auth
-
-Use `get_db` como dependência de sessão e passe a sessão para `RepositorioCredenciais`. O chamador controla o commit e o rollback. `criar` gera um hash Argon2id com um *salt* aleatório e grava apenas o hash completo. Para verificar uma senha, passe-a com o hash armazenado para `verificar_senha`. O banco compara e-mails sem distinguir maiúsculas de minúsculas. Seu índice único resolve disputas de cadastro mesmo entre processos diferentes. A duplicidade chega ao chamador como `IntegrityError` no `flush`. O cadastro e o login públicos serão implementados nas próximas entregas.
+O Auth cria as tabelas de credenciais, sessões de refresh e códigos OAuth no schema `autenticacao`. A inicialização da API não executa migrações.
 
 ## Testes
 
-Use um PostgreSQL local com um banco vazio e descartável cujo nome comece com `auth_teste`. A suíte aplica e reverte a migração e inclui duas conexões concorrentes. Em `autenticacao`, com o ambiente virtual ativo:
+Testes unitários e de rotas do Auth:
 
-```bash
-python -m pip install -r requirements-dev.txt
-createdb auth_teste
-TEST_DATABASE_URL='postgresql+psycopg://USUARIO:SENHA@127.0.0.1:5432/auth_teste' \
-  python -m pytest --cov=src --cov-report=term-missing --cov-fail-under=75
+```powershell
+python -m pip install -r requirements.txt
+python -m pip install pytest pytest-cov
+python -m pytest -q --cov=src --cov-report=term-missing --cov-fail-under=75
 ```
 
-Substitua os dados da URL pela configuração do banco local de testes. Sem `TEST_DATABASE_URL`, os testes de integração são pulados.
-
-## Transição de Perfis para Auth
-
-O cadastro de administrador em Perfis ainda grava em `perfis.senha`. A coluna tem limite de 30 caracteres e um índice único, incompatíveis com o armazenamento de hashes completos no Auth.
-
-A proposta para validar com o responsável por Perfis é usar o mesmo `conta_id` (UUID) nos dois serviços e mover a criação e a verificação de credenciais para o Auth. No corte, revisar as contas existentes e combinar com a equipe como invalidar as senhas legadas e emitir novas credenciais. Depois de retirar a escrita pela API de Perfis, criar uma **nova** migração de Perfis para remover a coluna e seu índice. Essa decisão de integração fica para a equipe antes de usar o fluxo de cadastro para contas reais.
+Para executar o fluxo real entre Auth, Perfis e RBAC, use apenas a pilha PostgreSQL isolada descrita em [`../docs/INTEGRACAO_LOCAL.md`](../docs/INTEGRACAO_LOCAL.md). Não use o Supabase compartilhado em testes que aplicam ou revertem migrações.

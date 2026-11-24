@@ -14,13 +14,6 @@ if TYPE_CHECKING:
 
 
 class Endereco(Base):
-    """Endereço, ligado a um Cliente ou a uma Loja (um para um).
-
-    Quem guarda a chave estrangeira é o dono: `clientes.endereco_id` e
-    `lojas.endereco_id` apontam para `enderecos.id`. Entregador e Admin não
-    têm essa coluna, então não têm endereço.
-    """
-
     __tablename__ = "enderecos"
 
     id: Mapped[uuid.UUID] = mapped_column(

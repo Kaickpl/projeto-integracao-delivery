@@ -5,6 +5,7 @@ from .admin import Admin
 from .loja import CategoriaLoja, Loja, StatusFuncionamento
 from .entregador import Entregador, StatusEntregador, TipoVeiculo
 from .endereco import Endereco
+from .horario_funcionamento import DiaSemana, HorarioFuncionamento
 
 __all__ = [
     "Perfil",
@@ -19,4 +20,6 @@ __all__ = [
     "TipoVeiculo",
     "StatusEntregador",
     "Endereco",
+    "DiaSemana",
+    "HorarioFuncionamento",
 ]

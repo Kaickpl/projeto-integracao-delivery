@@ -1,12 +1,13 @@
 import enum
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 
-from sqlalchemy import DateTime, Enum, String, func
+from sqlalchemy import Date, DateTime, Enum, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.core.database import Base
+from src.core.validators import calcular_idade
 
 
 class StatusConta(str, enum.Enum):
@@ -33,6 +34,10 @@ class Perfil(Base):
     cpf_cnpj: Mapped[str] = mapped_column(String(14), unique=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
     telefone: Mapped[str] = mapped_column(String(20))
+    # Cliente, entregador e admin precisam ter 18 anos ou mais; todo cadastro
+    # novo deles exige a data. Loja não tem (fica vazio). Perfis criados antes
+    # desta regra também ficam vazios até o admin preencher.
+    data_nascimento: Mapped[date | None] = mapped_column(Date)
     status: Mapped[StatusConta] = mapped_column(
         Enum(StatusConta, name="status_conta"),
         default=StatusConta.PENDENTE_APROVACAO,
@@ -43,6 +48,12 @@ class Perfil(Base):
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+
+    @property
+    def idade(self) -> int | None:
+        if self.data_nascimento is None:
+            return None
+        return calcular_idade(self.data_nascimento)
 
     # `tipo` decide qual subclasse é carregada. `polymorphic_abstract` impede
     # gravar um Perfil genérico: só Cliente, Loja, Entregador e Admin.

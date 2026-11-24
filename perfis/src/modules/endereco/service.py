@@ -5,13 +5,11 @@ from src.core.exceptions import CepNaoEncontrado, DadosInvalidos, ServicoIndispo
 from src.core.validators import cep_valido, limpar_cep
 
 MENSAGEM_CEP_INDISPONIVEL = (
-    "Não foi possível consultar o CEP agora. "
-    "Tente de novo ou preencha o endereço manualmente."
+
 )
 
 
 def consultar_cep(cep: str) -> dict:
-    """Busca no ViaCEP o logradouro, o bairro, a cidade e a UF de um CEP."""
     cep = limpar_cep(cep)
     if not cep_valido(cep):
         raise DadosInvalidos("CEP deve ter 8 dígitos")
@@ -27,13 +25,11 @@ def consultar_cep(cep: str) -> dict:
 
     if not isinstance(dados, dict):
         raise ServicoIndisponivel(MENSAGEM_CEP_INDISPONIVEL)
-    # Para CEP que não existe, o ViaCEP responde 200 com {"erro": true}.
     if dados.get("erro"):
         raise CepNaoEncontrado()
 
     return {
         "cep": cep,
-        # Vem "" em cidades com CEP único: o usuário digita.
         "logradouro": dados.get("logradouro") or None,
         "bairro": dados.get("bairro") or None,
         "cidade": dados.get("localidade"),

@@ -16,9 +16,5 @@ router = APIRouter(prefix="/enderecos", tags=["enderecos"])
     },
 )
 def buscar_cep(cep: str):
-    """Busca o endereço de um CEP (ViaCEP) para preencher o formulário.
 
-    Aceita o CEP com ou sem hífen. O front chama esta rota quando o usuário
-    termina de digitar o CEP e preenche logradouro, bairro, cidade e UF.
-    """
     return service.consultar_cep(cep)

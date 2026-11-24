@@ -4,19 +4,14 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.core.exceptions import AcaoNaoPermitida, DadoDuplicado, PerfilNaoEncontrado
+from src.core.database import salvar_alteracoes
+from src.core.exceptions import AcaoNaoPermitida, PerfilNaoEncontrado
 from src.core.identidade import criar_credencial_e_associar_papel
 from src.modules.admin.schemas import AdminCreate, PerfilAdminUpdate
 from src.modules.perfil_usuario.admin import Admin
+from src.modules.perfil_usuario.entregador import Entregador, StatusEntregador
+from src.modules.perfil_usuario.loja import Loja, StatusFuncionamento
 from src.modules.perfil_usuario.perfil import Perfil, StatusConta, TipoPerfil
-
-
-def _commit(db: Session) -> None:
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise DadoDuplicado()
 
 
 def buscar_perfil(db: Session, perfil_id: UUID) -> Perfil:
@@ -46,7 +41,7 @@ def criar_admin(db: Session, dados: AdminCreate) -> Perfil:
     db.add(admin)
     db.flush()
     criar_credencial_e_associar_papel(admin.id, admin.email, dados.senha, "ADMIN")
-    _commit(db)
+    salvar_alteracoes(db)
     db.refresh(admin)
     return admin
 
@@ -55,7 +50,7 @@ def atualizar_perfil(db: Session, perfil_id: UUID, dados: PerfilAdminUpdate) -> 
     perfil = buscar_perfil(db, perfil_id)
     for campo, valor in dados.model_dump(exclude_unset=True).items():
         setattr(perfil, campo, valor)
-    _commit(db)
+    salvar_alteracoes(db)
     db.refresh(perfil)
     return perfil
 
@@ -63,7 +58,16 @@ def atualizar_perfil(db: Session, perfil_id: UUID, dados: PerfilAdminUpdate) -> 
 def alterar_status(db: Session, perfil_id: UUID, novo_status: StatusConta) -> Perfil:
     perfil = buscar_perfil(db, perfil_id)
     perfil.status = novo_status
-    _commit(db)
+    # Conta que deixa de estar ativa (suspensa ou de volta à análise) sai de
+    # operação: a loja fecha e o entregador fica inativo, mesmo no meio de
+    # uma entrega. Ao reativar, cada um volta a abrir / ficar disponível
+    # por conta própria.
+    if novo_status != StatusConta.ATIVO:
+        if isinstance(perfil, Loja):
+            perfil.status_funcionamento = StatusFuncionamento.FECHADO
+        elif isinstance(perfil, Entregador):
+            perfil.status_entregador = StatusEntregador.INATIVO
+    salvar_alteracoes(db)
     db.refresh(perfil)
     return perfil
 

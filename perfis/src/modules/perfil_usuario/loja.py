@@ -13,6 +13,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from .endereco import Endereco
+from .horario_funcionamento import HorarioFuncionamento
 from .perfil import Perfil, TipoPerfil
 
 
@@ -44,7 +45,7 @@ class Loja(Perfil):
 
     `nome` e `telefone` vêm de Perfil. O endereço é obrigatório e fica na
     tabela `enderecos`, ligado por `endereco_id`. Os horários de
-    funcionamento são cadastrados à parte.
+    funcionamento ficam em `horarios_funcionamento`.
     """
 
     __tablename__ = "lojas"
@@ -60,6 +61,10 @@ class Loja(Perfil):
     )
     # Em centavos (R$ 5,90 -> 590), como no padrão da turma.
     taxa_entrega: Mapped[int] = mapped_column(
+        Integer, default=0, server_default=text("0")
+    )
+    # Também em centavos. 0 = sem pedido mínimo.
+    valor_minimo_pedido: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")
     )
     # Em minutos.
@@ -85,10 +90,19 @@ class Loja(Perfil):
         single_parent=True,
     )
 
+    # Apagar a loja apaga os horários dela junto.
+    horarios: Mapped[list[HorarioFuncionamento]] = relationship(
+        cascade="all, delete-orphan",
+        order_by=(HorarioFuncionamento.dia_semana, HorarioFuncionamento.abre),
+    )
+
     __table_args__ = (
         # Um endereço pertence a uma loja só.
         UniqueConstraint("endereco_id", name="uq_lojas_endereco_id"),
         CheckConstraint("taxa_entrega >= 0", name="ck_loja_taxa_entrega_nao_negativa"),
+        CheckConstraint(
+            "valor_minimo_pedido >= 0", name="ck_loja_valor_minimo_pedido_nao_negativo"
+        ),
         CheckConstraint(
             "tempo_estimado_min > 0 AND tempo_estimado_max > 0",
             name="ck_loja_tempo_estimado_positivo",

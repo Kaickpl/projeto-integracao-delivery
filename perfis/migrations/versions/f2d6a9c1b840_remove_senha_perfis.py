@@ -12,7 +12,9 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.drop_index("ix_perfis_senha", table_name="perfis")
+    # Uma migração paralela pode já ter removido o índice único. A remoção
+    # da coluna também descarta qualquer índice remanescente no PostgreSQL.
+    op.execute("DROP INDEX IF EXISTS ix_perfis_senha")
     op.drop_column("perfis", "senha")
 
 

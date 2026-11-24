@@ -31,7 +31,7 @@
 - Mostrar o segredo apenas uma vez no provisionamento; nunca incluí-lo em respostas subsequentes, logs, eventos ou exemplos versionados.
 - Provisionamento, rotação e desativação devem ser operações administrativas controladas, não uma rota pública de autoatendimento.
 - Desativar um cliente bloqueia novas emissões. Rotação aceita um novo segredo sem compartilhar credenciais entre consumidores; a janela de sobreposição deve ser acordada.
-- A persistência e o estado são compartilhados pelo PostgreSQL. RabbitMQ não autoriza nem revoga tokens; eventos de auditoria, se contratados, não incluem segredo ou token.
+- A persistência e o estado são compartilhados pelo PostgreSQL. RabbitMQ não participa do fluxo implementado: não autoriza, emite nem revoga tokens. Ainda não há evento ou contrato de mensageria definido; qualquer evento futuro será apenas complementar e não carregará segredo ou token.
 
 ## Decisões pendentes para aceite
 

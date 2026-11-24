@@ -22,7 +22,7 @@ Client Credentials usa `client_secret_basic`, `resource` como URI absoluta (RFC 
 
 O access token M2M usa `sub=servico:<client_id>`, `client_id` e `scope`, além de `iss`, `aud`, `iat`, `exp` e `jti`. Não inclui `role`, `sid` ou claims pessoais; não há refresh token. A validade padrão é 10 minutos, configurável entre 1 e 15. Rotacionar ou desativar um cliente impede novas emissões, mas tokens existentes permanecem válidos até `exp`. O endpoint RBAC `POST /v1/tokens/servico/validar` valida assinatura localmente por JWKS e verifica a audiência e os escopos requeridos contra a política atual.
 
-Clientes são provisionados em operação administrativa local; o segredo aparece apenas uma vez. Permissões são concedidas/removidas no RBAC por operação administrativa local. Chamadas internas atuais entre Auth, Perfis e RBAC continuam com seus tokens dedicados até cada consumidor migrar. RabbitMQ não participa de emissão, autorização ou revogação autoritativa.
+Clientes são provisionados em operação administrativa local; o segredo aparece apenas uma vez. Permissões são concedidas/removidas no RBAC por operação administrativa local. Chamadas internas atuais entre Auth, Perfis e RBAC continuam com seus tokens dedicados até cada consumidor migrar. RabbitMQ não participa da emissão, da consulta de permissões nem da validação de tokens.
 
 ## Endpoints
 
@@ -61,23 +61,11 @@ Os caminhos da API são o contrato em português. Os caminhos `/.well-known/jwks
 - Antes de autorizar uma requisição protegida, consumidores consultam `POST /v1/tokens/validar` no RBAC com o access token do usuário. RBAC consulta a introspecção autenticada do Auth; token inválido, expirado, revogado ou com papel desatualizado resulta em `401`. Indisponibilidade do Auth ou do banco RBAC resulta em `503` (falha fechada).
 - Se o estado persistido não puder ser atualizado, logout não pode ser confirmado como concluído. Revogação não depende de cache local nem de entrega de mensagem.
 
-## RabbitMQ
+## Mensageria (RabbitMQ)
 
-Requisições de autorização, token, refresh, revogação e introspecção são síncronas por HTTP, pois o chamador precisa do resultado antes de continuar. Este checkout ainda não publica nem consome eventos RabbitMQ. Se a turma contratar o evento opcional `identity.session.revoked`, ele só deve ser publicado depois da persistência autoritativa e nunca pode decidir se a sessão está revogada.
+RabbitMQ não está implementado neste fluxo: Auth não publica nem consome eventos para login, Client Credentials, emissão, refresh, consulta de permissões ou logout. Essas operações usam HTTP síncrono e PostgreSQL; o Auth só emite o token depois de receber a decisão do RBAC. O RBAC mantém as permissões atuais, e a validação online compara os escopos do token com essa política.
 
-Evento proposto:
-
-```json
-{
-  "event_id": "uuid",
-  "event_type": "identity.session.revoked",
-  "occurred_at": "2026-11-23T12:00:00Z",
-  "conta_id": "uuid",
-  "session_id": "uuid"
-}
-```
-
-Consumidores tratam duplicatas de forma idempotente. Evento não contém senha, hash de senha, token, segredo OAuth ou CPF. A indisponibilidade do broker pode atrasar notificações, mas não desfaz nem ignora revogação registrada no banco.
+Um evento de auditoria ou notificação de revogação poderá ser combinado futuramente. Ainda não há nome, payload, consumidores, política de repetição nem tratamento de falha acordados; por isso, este contrato não define evento de exemplo. Se a turma contratar eventos, eles serão complementares: não autorizam nem revogam por si só, não substituem o estado persistido e nunca incluem senha, hash, access token, refresh token ou segredo de cliente. A indisponibilidade do RabbitMQ não pode impedir a emissão síncrona nem desfazer uma revogação já persistida.
 
 ## Respostas de erro
 
@@ -91,8 +79,10 @@ Consumidores tratam duplicatas de forma idempotente. Evento não contém senha, 
 - Contratos de sucesso/erro e claims devem ter exemplos em OpenAPI e testes de contrato/mocks compartilhados.
 - Branch por issue a partir de `develop` atualizada e PR com destino a `develop`.
 
-## Dependências ainda não implementadas/confirmadas
+## Pendências de integração
 
-1. A concessão Client Credentials e a gestão de clientes/segredos de serviço ainda precisam ser implementadas.
-2. RabbitMQ permanece fora do caminho autoritativo de emissão, renovação e revogação. Publicação de eventos requer contrato da turma.
-3. As equipes consumidoras precisam confirmar `role`, `aud`, JWKS, introspecção e formato de erro antes de depender do contrato em produção.
+1. Financeiro, Catálogo e Autorização/RBAC precisam aceitar o método de autenticação, formato de `sub`, `aud`/`resource`, nomes de escopos e validade dos tokens M2M antes de habilitar o grant em ambientes compartilhados.
+2. Ainda falta integrar um consumidor real da turma; os testes locais usam um fluxo simulado.
+3. Qualquer uso de RabbitMQ precisa de contrato acordado com os serviços participantes. Não é dependência para emitir ou validar tokens neste contrato.
+
+O código de Client Credentials, as migrações, os comandos de gestão e os testes locais já estão implementados. A configuração permanece `OAUTH_CLIENT_CREDENTIALS_ENABLED=false` por padrão até os aceites acima.

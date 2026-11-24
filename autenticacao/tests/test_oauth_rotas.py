@@ -1,6 +1,7 @@
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -31,6 +32,28 @@ def cliente_teste(monkeypatch):
         lambda: SimpleNamespace(JWT_ISSUER="http://localhost:8001"),
     )
     return TestClient(app, follow_redirects=False)
+
+
+@pytest.mark.parametrize(
+    ("campos", "senha", "campo_invalido"),
+    [
+        ({"conta_id": "00000000-0000-4000-8000-000000000001"}, "curta", "senha"),
+        ({}, "senha-ficticia-para-teste", "conta_id"),
+    ],
+)
+def test_erro_de_cadastro_preserva_campo_sem_expor_senha(
+    monkeypatch, caplog, campos, senha, campo_invalido
+):
+    dados = {"email": "teste@example.test", "tipo_conta": "CLIENTE", "senha": senha, **campos}
+    cliente = cliente_teste(monkeypatch)
+    try:
+        resposta = cliente.post("/v1/interno/credenciais", json=dados)
+        assert resposta.status_code == 422
+        assert resposta.json()["detail"][0]["loc"] == ["body", campo_invalido]
+        assert senha not in resposta.text
+        assert senha not in caplog.text
+    finally:
+        app.dependency_overrides.clear()
 
 
 def test_tela_de_login_inicia_authorization_code_com_pkce(monkeypatch):

@@ -1,6 +1,6 @@
 # Contrato OAuth 2.0 e tokens — Identidade
 
-**Estado:** Authorization Code + PKCE, refresh, revogação, introspecção e JWKS estão implementados no Auth. Client Credentials continua pendente; consumidores devem usar apenas os grants publicados nos metadados.
+**Estado:** Authorization Code + PKCE, refresh, revogação, introspecção e JWKS estão implementados. Client Credentials está implementado atrás de configuração desativada por padrão; os consumidores só devem utilizá-lo depois de aceitar o contrato e habilitá-lo explicitamente.
 
 ## Serviços e responsabilidades
 
@@ -18,7 +18,11 @@ Usar Authorization Code com PKCE. O aplicativo redireciona o usuário ao Authori
 
 ### Serviço para serviço
 
-O contrato prevê Client Credentials com credencial distinta por serviço consumidor. Essa concessão ainda não está implementada; chamadas internas atuais usam credenciais de serviço dedicadas em configuração secreta. Segredos não são incluídos em tokens de usuário, eventos ou logs.
+Client Credentials usa `client_secret_basic`, `resource` como URI absoluta (RFC 8707) e `scope` com escopos separados por espaço em `POST /v1/oauth/tokens`. Erros incluem `error` OAuth estável e a mensagem comum em português. O Auth armazena somente hash Argon2id de credenciais individuais. Antes de emitir, consulta a política autoritativa de audiência/escopos no RBAC. O grant fica desativado por padrão até o aceite dos consumidores e do RBAC; quando habilitado, é publicado nos metadados.
+
+O access token M2M usa `sub=servico:<client_id>`, `client_id` e `scope`, além de `iss`, `aud`, `iat`, `exp` e `jti`. Não inclui `role`, `sid` ou claims pessoais; não há refresh token. A validade padrão é 10 minutos, configurável entre 1 e 15. Rotacionar ou desativar um cliente impede novas emissões, mas tokens existentes permanecem válidos até `exp`. O endpoint RBAC `POST /v1/tokens/servico/validar` valida assinatura localmente por JWKS e verifica a audiência e os escopos requeridos contra a política atual.
+
+Clientes são provisionados em operação administrativa local; o segredo aparece apenas uma vez. Permissões são concedidas/removidas no RBAC por operação administrativa local. Chamadas internas atuais entre Auth, Perfis e RBAC continuam com seus tokens dedicados até cada consumidor migrar. RabbitMQ não participa de emissão, autorização ou revogação autoritativa.
 
 ## Endpoints
 
@@ -26,14 +30,16 @@ O contrato prevê Client Credentials com credencial distinta por serviço consum
 | --- | --- |
 | `GET /v1/oauth/autorizar` | Início do Authorization Code + PKCE; apresenta a página hospedada no Auth. |
 | `POST /v1/oauth/entrar` | Submissão do formulário hospedado pelo Auth; não é um grant OAuth de senha. |
-| `POST /v1/oauth/tokens` | Trocar código por tokens ou renovar via refresh token, usando formulário OAuth. |
+| `POST /v1/oauth/tokens` | Trocar código, renovar via refresh token ou, quando habilitado, emitir token M2M via Client Credentials. |
 | `POST /v1/oauth/revogar` | Revogar a família de sessão pelo refresh token; resposta não revela se o token existe. |
 | `POST /v1/oauth/introspeccao` | Consulta autenticada por serviço confiável (Autorização/RBAC) para confirmar `active`, `sub`, `jti` e `role`, inclusive estado de revogação. |
 | `POST /v1/tokens/validar` (Autorização/RBAC) | Recebe o access token em `Authorization: Bearer`, confirma a sessão online no Auth e devolve o papel atualmente associado no RBAC. |
+| `GET /v1/interno/clientes/{client_id}/permissoes?audiencia=...` (Autorização/RBAC) | Auth consulta, com credencial interna, os escopos autorizados ao cliente e recurso. |
+| `POST /v1/tokens/servico/validar` (Autorização/RBAC) | Valida um token M2M por JWKS, compara os escopos requeridos com o token e com a política atual do RBAC. |
 | `GET /.well-known/jwks.json` | Publicar chaves públicas para validar assinaturas. |
 | `GET /.well-known/oauth-authorization-server` | Metadados do Authorization Server, incluindo issuer, endpoints, grant types e `jwks_uri`. |
 
-Os caminhos da API são o contrato em português. Os caminhos `/.well-known/jwks.json` e `/.well-known/oauth-authorization-server` permanecem conforme os padrões de descoberta. Rotas de escrita usam HTTPS. Introspecção não é pública. O endpoint de metadados anuncia somente `authorization_code` e `refresh_token`; Client Credentials ainda não está disponível.
+Os caminhos da API são o contrato em português. Os caminhos `/.well-known/jwks.json` e `/.well-known/oauth-authorization-server` permanecem conforme os padrões de descoberta. Rotas de escrita usam HTTPS. Introspecção não é pública. O metadado `client_credentials` só aparece quando `OAUTH_CLIENT_CREDENTIALS_ENABLED=true`.
 
 ## Access token
 

@@ -14,6 +14,7 @@ from urllib.parse import parse_qs, urlsplit
 import httpx
 import jwt
 import pytest
+from urllib.parse import quote_plus
 
 
 def _ambiente_integracao():
@@ -327,3 +328,104 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
             assert _validar_no_rbac(
                 client, rbac_url, terceira_sessao["access_token"]
             ).status_code == 401
+
+
+def test_client_credentials_emite_token_limitado_validado_por_jwks_e_rbac():
+    bases = _ambiente_integracao()
+    auth_url, rbac_url = bases["AUTH"], bases["RBAC"]
+    client_id = os.getenv("INTEGRATION_M2M_CLIENT_ID", "teste-worker-financeiro")
+    secret = os.getenv("INTEGRATION_M2M_CLIENT_SECRET", "segredo-m2m-apenas-teste-local")
+    audience = os.getenv("INTEGRATION_M2M_AUDIENCE", "https://financeiro.example.test")
+    escopo = "pagamentos:ler"
+    with httpx.Client(timeout=10) as client:
+        metadados = client.get(f"{auth_url}/.well-known/oauth-authorization-server")
+        assert metadados.status_code == 200
+        assert "client_credentials" in metadados.json()["grant_types_supported"]
+
+        basic = base64.b64encode(
+            f"{quote_plus(client_id)}:{quote_plus(secret)}".encode()
+        ).decode()
+        emissao = client.post(
+            f"{auth_url}/v1/oauth/tokens",
+            headers={"Authorization": f"Basic {basic}"},
+            data={
+                "grant_type": "client_credentials",
+                "resource": audience,
+                "scope": escopo,
+            },
+        )
+        assert emissao.status_code == 200, emissao.text
+        tokens = emissao.json()
+        assert tokens["token_type"] == "Bearer"
+        assert tokens["expires_in"] == 600
+        assert "refresh_token" not in tokens
+
+        jwks = client.get(f"{auth_url}/.well-known/jwks.json").json()
+        header = jwt.get_unverified_header(tokens["access_token"])
+        chave = next(chave for chave in jwks["keys"] if chave["kid"] == header["kid"])
+        claims = jwt.decode(
+            tokens["access_token"],
+            jwt.PyJWK.from_dict(chave).key,
+            algorithms=["RS256"],
+            issuer=os.getenv("INTEGRATION_AUTH_ISSUER", "http://127.0.0.1:18001"),
+            audience=audience,
+        )
+        assert claims["sub"] == f"servico:{client_id}"
+        assert claims["client_id"] == client_id
+        assert claims["scope"] == escopo
+        assert "role" not in claims and "sid" not in claims
+
+        emissao_replica = client.post(
+            f"{bases['AUTH_REPLICA']}/v1/oauth/tokens",
+            headers={"Authorization": f"Basic {basic}"},
+            data={
+                "grant_type": "client_credentials",
+                "resource": audience,
+                "scope": escopo,
+            },
+        )
+        assert emissao_replica.status_code == 200, emissao_replica.text
+        assert "refresh_token" not in emissao_replica.json()
+
+        def solicitar_em(url):
+            return httpx.post(
+                f"{url}/v1/oauth/tokens",
+                headers={"Authorization": f"Basic {basic}"},
+                data={
+                    "grant_type": "client_credentials",
+                    "resource": audience,
+                    "scope": escopo,
+                },
+                timeout=10,
+            )
+
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            futures = [
+                executor.submit(
+                    solicitar_em,
+                    bases["AUTH"] if indice % 2 else bases["AUTH_REPLICA"],
+                )
+                for indice in range(4)
+            ]
+            concorrentes = [futuro.result() for futuro in futures]
+        assert all(resposta.status_code == 200 for resposta in concorrentes)
+
+        if os.getenv("INTEGRATION_RESTART_AUTH_REPLICA") == "1":
+            _reiniciar_replica_auth_e_aguardar(bases["AUTH_REPLICA"])
+            apos_reinicio = solicitar_em(bases["AUTH_REPLICA"])
+            assert apos_reinicio.status_code == 200, apos_reinicio.text
+            assert "refresh_token" not in apos_reinicio.json()
+
+        autorizado = client.post(
+            f"{rbac_url}/v1/tokens/servico/validar",
+            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+            json={"audiencia": audience, "escopos": [escopo]},
+        )
+        assert autorizado.status_code == 200, autorizado.text
+
+        negado = client.post(
+            f"{rbac_url}/v1/tokens/servico/validar",
+            headers={"Authorization": f"Bearer {tokens['access_token']}"},
+            json={"audiencia": audience, "escopos": ["pagamentos:estornar"]},
+        )
+        assert negado.status_code == 403

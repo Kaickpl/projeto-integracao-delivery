@@ -26,4 +26,6 @@ def obter_perfil(
     perfil = db.get(Perfil, perfil_id)
     if perfil is None:
         raise HTTPException(404, "Perfil não encontrado")
+    if not perfil.identidade_pronta:
+        raise HTTPException(503, "Cadastro de identidade ainda não foi concluído")
     return perfil

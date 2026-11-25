@@ -10,6 +10,7 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from jwt import PyJWKClient, PyJWKClientConnectionError, PyJWKClientError
 from pydantic import BaseModel, Field
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from starlette.responses import JSONResponse
@@ -281,12 +282,14 @@ def associar_papel(
 ):
     if dados.role not in PAPEIS:
         raise HTTPException(400, "Papel inválido")
-    papel = db.get(PapelConta, conta_id)
-    if papel is None:
-        papel = PapelConta(conta_id=conta_id, role=dados.role)
-        db.add(papel)
-    else:
-        papel.role = dados.role
+    db.execute(
+        insert(PapelConta)
+        .values(conta_id=conta_id, role=dados.role)
+        .on_conflict_do_update(
+            index_elements=[PapelConta.conta_id],
+            set_={"role": dados.role},
+        )
+    )
     db.commit()
     return {"conta_id": str(conta_id), "role": dados.role}
 

@@ -1,7 +1,7 @@
 import httpx
 
 from src.core.config import settings
-from src.core.exceptions import ServicoIndisponivel
+from src.core.exceptions import AcaoNaoPermitida, ServicoIndisponivel
 
 
 def criar_credencial_e_associar_papel(conta_id, email: str, senha: str, role: str) -> None:
@@ -21,5 +21,13 @@ def criar_credencial_e_associar_papel(conta_id, email: str, senha: str, role: st
             timeout=timeout,
         )
         papel.raise_for_status()
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 409:
+            raise AcaoNaoPermitida(
+                "A credencial já existe com dados diferentes; reutilize a chave e os dados originais"
+            ) from None
+        raise ServicoIndisponivel(
+            "Não foi possível provisionar a identidade no Auth/RBAC"
+        ) from None
     except httpx.HTTPError:
         raise ServicoIndisponivel("Não foi possível provisionar a identidade no Auth/RBAC") from None

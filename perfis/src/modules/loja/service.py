@@ -10,7 +10,7 @@ from src.core.exceptions import (
     DadosInvalidos,
     PerfilNaoEncontrado,
 )
-from src.core.identidade import criar_credencial_e_associar_papel
+from src.core.provisionamento import provisionar_cadastro
 from src.modules.loja.schemas import (
     MENSAGEM_TEMPO_ESTIMADO,
     HorariosUpdate,
@@ -32,17 +32,23 @@ def _salvar(db: Session, loja: Loja) -> Loja:
     return loja
 
 
-def cadastrar_loja(db: Session, dados: LojaCreate) -> Loja:
+def cadastrar_loja(
+    db: Session, dados: LojaCreate, chave_idempotencia: UUID
+) -> Loja:
     loja = Loja(
         **dados.model_dump(exclude={"endereco", "senha"}),
         endereco=Endereco(**dados.endereco.model_dump()),
         status=StatusConta.PENDENTE_APROVACAO,
         status_funcionamento=StatusFuncionamento.FECHADO,
     )
-    db.add(loja)
-    db.flush()
-    criar_credencial_e_associar_papel(loja.id, loja.email, dados.senha, "LOJA")
-    return _salvar(db, loja)
+    return provisionar_cadastro(
+        db,
+        loja,
+        senha=dados.senha,
+        role="LOJA",
+        chave_idempotencia=chave_idempotencia,
+        dados_cadastro=dados.model_dump(exclude={"senha"}),
+    )
 
 
 def buscar_loja(db: Session, loja_id: UUID) -> Loja:

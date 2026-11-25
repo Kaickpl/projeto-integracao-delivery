@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from src.core.database import get_db
@@ -20,8 +20,12 @@ router = APIRouter(prefix="/lojas", tags=["lojas"])
 
 
 @router.post("", response_model=LojaResponse, status_code=201)
-def cadastrar_loja(dados: LojaCreate, db: Session = Depends(get_db)):
-    return service.cadastrar_loja(db, dados)
+def cadastrar_loja(
+    dados: LojaCreate,
+    chave_idempotencia: UUID = Header(alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    return service.cadastrar_loja(db, dados, chave_idempotencia)
 
 
 @router.get("", response_model=list[LojaResponse])

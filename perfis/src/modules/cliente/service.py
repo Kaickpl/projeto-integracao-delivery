@@ -1,14 +1,16 @@
-from sqlalchemy.exc import IntegrityError
+from uuid import UUID
+
 from sqlalchemy.orm import Session
 
-from src.core.exceptions import DadoDuplicado
-from src.core.identidade import criar_credencial_e_associar_papel
+from src.core.provisionamento import provisionar_cadastro
 from src.modules.cliente.schemas import ClienteCreate
 from src.modules.perfil_usuario.cliente import Cliente
 from src.modules.perfil_usuario.perfil import StatusConta, TipoPerfil
 
 
-def cadastrar_cliente(db: Session, dados: ClienteCreate) -> Cliente:
+def cadastrar_cliente(
+    db: Session, dados: ClienteCreate, chave_idempotencia: UUID
+) -> Cliente:
     cliente = Cliente(
         tipo=TipoPerfil.CLIENTE,
         nome=dados.nome,
@@ -17,13 +19,11 @@ def cadastrar_cliente(db: Session, dados: ClienteCreate) -> Cliente:
         telefone=dados.telefone,
         status=StatusConta.PENDENTE_APROVACAO,
     )
-    db.add(cliente)
-    db.flush()
-    criar_credencial_e_associar_papel(cliente.id, cliente.email, dados.senha, "CLIENTE")
-    try:
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise DadoDuplicado() from None
-    db.refresh(cliente)
-    return cliente
+    return provisionar_cadastro(
+        db,
+        cliente,
+        senha=dados.senha,
+        role="CLIENTE",
+        chave_idempotencia=chave_idempotencia,
+        dados_cadastro=dados.model_dump(exclude={"senha"}),
+    )

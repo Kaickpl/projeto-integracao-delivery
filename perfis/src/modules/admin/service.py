@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from src.core.database import salvar_alteracoes
 from src.core.exceptions import AcaoNaoPermitida, PerfilNaoEncontrado
-from src.core.identidade import criar_credencial_e_associar_papel
+from src.core.provisionamento import provisionar_cadastro
 from src.modules.admin.schemas import AdminCreate, PerfilAdminUpdate
 from src.modules.perfil_usuario.admin import Admin
 from src.modules.perfil_usuario.entregador import Entregador, StatusEntregador
@@ -36,14 +36,18 @@ def listar_perfis(
     return list(db.scalars(stmt))
 
 
-def criar_admin(db: Session, dados: AdminCreate) -> Perfil:
+def criar_admin(
+    db: Session, dados: AdminCreate, chave_idempotencia: UUID
+) -> Perfil:
     admin = Admin(**dados.model_dump(exclude={"senha"}), status=StatusConta.ATIVO)
-    db.add(admin)
-    db.flush()
-    criar_credencial_e_associar_papel(admin.id, admin.email, dados.senha, "ADMIN")
-    salvar_alteracoes(db)
-    db.refresh(admin)
-    return admin
+    return provisionar_cadastro(
+        db,
+        admin,
+        senha=dados.senha,
+        role="ADMIN",
+        chave_idempotencia=chave_idempotencia,
+        dados_cadastro=dados.model_dump(exclude={"senha"}),
+    )
 
 
 def atualizar_perfil(db: Session, perfil_id: UUID, dados: PerfilAdminUpdate) -> Perfil:

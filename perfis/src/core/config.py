@@ -8,6 +8,9 @@ class Settings(BaseSettings):
     AUTENTICACAO_SERVICE_TOKEN: str = ""
     AUTORIZACAO_URL: str = "http://autorizacao:8003"
     AUTORIZACAO_SERVICE_TOKEN: str = ""
+    PERFIS_OAUTH_AUDIENCE: str = "http://perfis:8002"
+    PERFIS_READ_SCOPE: str = "perfis:ler"
+    AUTHENTICACAO_ISSUER: str = "http://localhost:8001"
     VIACEP_URL: str = "https://viacep.com.br/ws"
     VIACEP_TIMEOUT: float = 5.0
 

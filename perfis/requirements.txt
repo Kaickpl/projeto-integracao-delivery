@@ -18,3 +18,4 @@ pydantic-settings
 alembic
 email-validator
 httpx==0.28.1
+PyJWT[crypto]==2.10.1

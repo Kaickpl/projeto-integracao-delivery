@@ -193,6 +193,33 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
         )
         assert ativacao.status_code == 200, ativacao.text
 
+        # Worker de Notificações: escopo mínimo, audiência de Perfis e validação
+        # local por JWKS na própria rota protegida, sem chamada ao endpoint RBAC.
+        credencial_m2m = base64.b64encode(
+            b"worker-notificacoes-financeiro:segredo-perfis-apenas-teste-local"
+        ).decode()
+        token_m2m = client.post(
+            f"{auth_url}/v1/oauth/tokens",
+            data={
+                "grant_type": "client_credentials",
+                "resource": "http://perfis:8002",
+                "scope": "perfis:ler",
+            },
+            headers={"Authorization": f"Basic {credencial_m2m}"},
+        )
+        assert token_m2m.status_code == 200, token_m2m.text
+        assert "refresh_token" not in token_m2m.json()
+        perfil_lido = client.get(
+            f"{perfis_url}/v1/perfis/{conta_id}",
+            headers={"Authorization": f"Bearer {token_m2m.json()['access_token']}"},
+        )
+        assert perfil_lido.status_code == 200, perfil_lido.text
+        assert perfil_lido.json() == {
+            "id": conta_id,
+            "nome": "Cliente de integração",
+            "email": email,
+        }
+
         papel_headers = {"Authorization": f"Bearer {token_rbac}"}
         papel = client.get(
             f"{rbac_url}/v1/interno/contas/{conta_id}/papel",

@@ -28,7 +28,7 @@ O Auth publica as chaves públicas em `/.well-known/jwks.json`. Refresh tokens s
 
 O Auth também implementa `grant_type=client_credentials`, com segredo individual por serviço, escopos e audiência. O RBAC mantém a política de permissões; os tokens M2M não têm `role` de usuário nem refresh token. A validade padrão é 10 minutos.
 
-Este fluxo está **desativado por padrão** com `OAUTH_CLIENT_CREDENTIALS_ENABLED=false`. Os contratos de audiência, escopos e claims ainda precisam ser aceitos pelos consumidores antes de habilitá-lo em ambientes compartilhados. RabbitMQ não participa da emissão nem da decisão de autorização. Mais detalhes estão em [Alinhamento Client Credentials](autenticacao/docs/ALINHAMENTO_CLIENT_CREDENTIALS.md).
+Este fluxo está **desativado por padrão** com `OAUTH_CLIENT_CREDENTIALS_ENABLED=false`. O Financeiro aceitou tokens M2M de 10 minutos validados localmente por JWKS para leitura de perfil, sem consultar RBAC a cada chamada; o RBAC continua autorizando escopos na emissão pelo Auth. Perfis oferece `GET /v1/perfis/{id}`, protegida pelo escopo `perfis:ler` e audiência local `http://perfis:8002`. O valor da audiência publicada e o provisionamento do cliente real ficam para quando o ambiente compartilhado estiver disponível. RabbitMQ não participa da emissão nem da decisão de autorização. Mais detalhes estão em [Alinhamento Client Credentials](autenticacao/docs/ALINHAMENTO_CLIENT_CREDENTIALS.md).
 
 ## Endpoints de referência
 
@@ -38,6 +38,7 @@ Este fluxo está **desativado por padrão** com `OAUTH_CLIENT_CREDENTIALS_ENABLE
 | Auth | `POST /v1/oauth/tokens` | Troca código, renova sessão ou, se habilitado, emite token M2M |
 | Auth | `POST /v1/oauth/revogar` | Revoga uma sessão de usuário |
 | Auth | `GET /.well-known/jwks.json` | Publica as chaves para validar assinaturas JWT |
+| Perfis | `GET /v1/perfis/{id}` | Devolve `id`, `nome` e `email` a um serviço M2M autorizado com `perfis:ler` |
 | RBAC | `POST /v1/tokens/validar` | Valida token de usuário e confere papel/revogação |
 | RBAC | `POST /v1/tokens/servico/validar` | Valida token M2M e os escopos solicitados |
 

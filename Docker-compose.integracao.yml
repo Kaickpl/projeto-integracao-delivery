@@ -41,6 +41,21 @@ services:
       banco_integracao:
         condition: service_healthy
 
+  preparar_cliente_m2m_perfis:
+    build: ./autenticacao
+    working_dir: /code
+    command: python -m tests.fixture_client_credentials
+    environment:
+      DATABASE_URL: postgresql+psycopg://integracao_teste:integracao_teste_local@banco_integracao:5432/delivery_teste
+      FIXTURE_ACTION: preparar
+      FIXTURE_CLIENT_ID: worker-notificacoes-financeiro
+      FIXTURE_CLIENT_SECRET: segredo-perfis-apenas-teste-local
+      FIXTURE_AUDIENCE: http://perfis:8002
+      FIXTURE_SCOPE: perfis:ler
+    depends_on:
+      banco_integracao:
+        condition: service_healthy
+
   autenticacao:
     build: ./autenticacao
     working_dir: /code
@@ -118,6 +133,9 @@ services:
       AUTENTICACAO_SERVICE_TOKEN: teste-perfis-auth
       AUTORIZACAO_URL: http://autorizacao:8003
       AUTORIZACAO_SERVICE_TOKEN: teste-perfis-rbac
+      PERFIS_OAUTH_AUDIENCE: http://perfis:8002
+      PERFIS_READ_SCOPE: perfis:ler
+      AUTHENTICACAO_ISSUER: http://127.0.0.1:18001
       VIACEP_URL: http://127.0.0.1:9/ws
       VIACEP_TIMEOUT: "1"
     depends_on:

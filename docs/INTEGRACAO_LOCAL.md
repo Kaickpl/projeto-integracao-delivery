@@ -20,6 +20,7 @@ docker compose -f Docker-compose.integracao.yml run --build --rm perfis alembic 
 docker compose -f Docker-compose.integracao.yml run --build --rm perfis alembic upgrade head
 docker compose -f Docker-compose.integracao.yml run --build --rm autorizacao python -m alembic upgrade head
 docker compose -f Docker-compose.integracao.yml run --build --rm preparar_cliente_m2m
+docker compose -f Docker-compose.integracao.yml run --build --rm preparar_cliente_m2m_perfis
 ```
 
 Confira as versões registradas:
@@ -60,7 +61,7 @@ Para incluir o teste de persistência após reiniciar uma instância Auth, antes
 
 O teste cria um cliente com CPF válido aleatório, verifica que o status pendente impede a autorização, ativa a conta no ambiente descartável, consulta o papel no RBAC, conclui Authorization Code + PKCE, valida assinatura e claims via JWKS, verifica o access token no endpoint RBAC, renova e revoga em outra instância Auth com a mesma persistência, tenta reutilizar o refresh anterior e confirma que o RBAC retorna `401` após a revogação. Também testa logout com access token e confirma que o refresh da família deixa de funcionar. O endpoint de perfil administrativo usado para ativar a conta não deve ser exposto sem autorização fora deste ambiente.
 
-O mesmo arquivo de teste inclui o fluxo Client Credentials: cria um cliente e uma permissão temporários somente no banco local, solicita tokens com Basic em duas instâncias, faz emissões concorrentes, valida assinatura/claims via JWKS e pede ao RBAC uma operação permitida e outra negada. A fixture grava a partir do container Auth e recusa qualquer banco que não esteja no host `banco_integracao`, com usuário `integracao_teste` e nome iniciado por `delivery_teste`. Com `INTEGRATION_RESTART_AUTH_REPLICA=1`, também reinicia a réplica e confirma que ela continua autenticando o cliente pelo estado persistido no banco.
+O mesmo arquivo de teste inclui Client Credentials para permissões de pagamento e leitura de perfil, usando clientes temporários criados pelas fixtures somente no banco local. Ele solicita tokens com Basic, valida assinatura/claims via JWKS e consulta `GET /v1/perfis/{id}` com `perfis:ler`. As fixtures gravam a partir do container Auth e recusam qualquer banco que não esteja no host `banco_integracao`, com usuário `integracao_teste` e nome iniciado por `delivery_teste`. Com `INTEGRATION_RESTART_AUTH_REPLICA=1`, também reinicia a réplica e confirma que ela continua autenticando o cliente pelo estado persistido no banco.
 
 ## Encerrar e descartar o banco local
 

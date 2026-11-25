@@ -62,8 +62,9 @@ def obter_status_e_papel(conta_id: UUID) -> tuple[str, str]:
         f"/v1/interno/contas/{conta_id}/papel",
     )
     status = perfil.get("status")
+    identidade_pronta = perfil.get("identidade_pronta", True)
     role = papel.get("role")
-    if status != "ATIVO":
+    if status != "ATIVO" or identidade_pronta is not True:
         raise HTTPException(403, "Conta não está ativa")
     if role not in PAPEIS_VALIDOS:
         raise HTTPException(403, "Papel da conta inválido")

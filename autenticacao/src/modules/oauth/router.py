@@ -13,6 +13,7 @@ from sqlalchemy.orm import Session
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
 
 from src.core.database import get_db
+from src.core.security import verificar_senha
 from src.modules.oauth import service
 from src.core.config import Settings
 from src.modules.credenciais.repository import RepositorioCredenciais
@@ -147,13 +148,31 @@ def criar_credencial(
         raise HTTPException(401, "Credencial de serviço inválida")
     if dados.tipo_conta not in service.PAPEIS_VALIDOS:
         raise HTTPException(400, "Tipo de conta inválido")
-    from sqlalchemy.exc import IntegrityError
+    repositorio = RepositorioCredenciais(db)
+    existente = repositorio.buscar_por_conta_id(dados.conta_id)
+    if existente is not None:
+        if (
+            existente.email.casefold() == dados.email.casefold()
+            and verificar_senha(dados.senha, existente.senha_hash)
+        ):
+            return JSONResponse(status_code=200, content={"conta_id": str(dados.conta_id)})
+        raise HTTPException(409, "Conta já provisionada com outros dados")
+    if repositorio.buscar_por_email(dados.email) is not None:
+        raise HTTPException(409, "E-mail ou conta já cadastrada")
 
+    from sqlalchemy.exc import IntegrityError
     try:
-        RepositorioCredenciais(db).criar(dados.conta_id, str(dados.email), dados.senha)
+        repositorio.criar(dados.conta_id, str(dados.email), dados.senha)
         db.commit()
     except IntegrityError:
         db.rollback()
+        existente = repositorio.buscar_por_conta_id(dados.conta_id)
+        if (
+            existente is not None
+            and existente.email.casefold() == dados.email.casefold()
+            and verificar_senha(dados.senha, existente.senha_hash)
+        ):
+            return JSONResponse(status_code=200, content={"conta_id": str(dados.conta_id)})
         raise HTTPException(409, "E-mail ou conta já cadastrada") from None
     return {"conta_id": str(dados.conta_id)}
 

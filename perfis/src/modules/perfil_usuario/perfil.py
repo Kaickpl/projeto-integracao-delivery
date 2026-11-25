@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import date, datetime
 
-from sqlalchemy import Date, DateTime, Enum, String, func
+from sqlalchemy import Boolean, Date, DateTime, Enum, String, func
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,6 +48,13 @@ class Perfil(Base):
     atualizado_em: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )
+    identidade_pronta: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=True, server_default="true"
+    )
+    chave_idempotencia: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), unique=True
+    )
+    dados_cadastro_hash: Mapped[str | None] = mapped_column(String(64))
 
     @property
     def idade(self) -> int | None:

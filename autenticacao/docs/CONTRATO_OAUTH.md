@@ -10,6 +10,8 @@
 - `Perfil.id` e `Auth.conta_id` usam o mesmo UUID. O cadastro em Perfis só conclui o vínculo depois de obter esse identificador do Auth.
 - **Autorização/RBAC** é a fonte autoritativa da associação entre `conta_id` e papel. Auth não concede nem deduz papel a partir de campos cadastrais.
 
+O cadastro distribuído em Perfis exige `Idempotency-Key` (UUID) nas rotas de criação. Perfis persiste primeiro o perfil com `identidade_pronta=false`, sem persistir senha, e então provisiona Auth e RBAC. Se uma dependência falhar ou a resposta se perder, a mesma requisição pode ser repetida com a mesma chave, mesmos dados e senha: Auth confirma idempotentemente a credencial existente e RBAC faz upsert do papel. Só após ambos confirmarem Perfis marca a identidade como pronta. Enquanto pendente, a conta não autentica e a leitura M2M do perfil responde `503`. Uma chave repetida com outros dados cadastrais recebe `409`.
+
 ## Fluxos OAuth 2.0
 
 ### Usuário interativo

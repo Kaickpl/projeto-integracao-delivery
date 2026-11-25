@@ -39,6 +39,7 @@ Este fluxo está **desativado por padrão** com `OAUTH_CLIENT_CREDENTIALS_ENABLE
 | Auth | `POST /v1/oauth/revogar` | Revoga uma sessão de usuário |
 | Auth | `GET /.well-known/jwks.json` | Publica as chaves para validar assinaturas JWT |
 | Perfis | `GET /v1/perfis/{id}` | Devolve `id`, `nome` e `email` a um serviço M2M autorizado com `perfis:ler` |
+| Perfis | `POST /clientes`, `/lojas`, `/entregadores` | Cria perfil com provisionamento recuperável; exige `Idempotency-Key` UUID |
 | RBAC | `POST /v1/tokens/validar` | Valida token de usuário e confere papel/revogação |
 | RBAC | `POST /v1/tokens/servico/validar` | Valida token M2M e os escopos solicitados |
 

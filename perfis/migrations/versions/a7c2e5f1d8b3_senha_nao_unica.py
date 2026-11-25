@@ -23,7 +23,10 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
-    op.drop_index('ix_perfis_senha', table_name='perfis')
+    # A revisão paralela que remove `perfis.senha` também remove este índice.
+    # O estado depende da ordem das duas branches; tornar a operação idempotente
+    # permite aplicar a cadeia em bancos novos e em bancos com uma das branches.
+    op.execute("DROP INDEX IF EXISTS ix_perfis_senha")
 
 
 def downgrade() -> None:

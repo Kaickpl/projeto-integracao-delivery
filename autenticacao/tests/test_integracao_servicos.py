@@ -153,6 +153,7 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
 
         cadastro = client.post(
             f"{perfis_url}/clientes",
+            headers={"Idempotency-Key": str(uuid.uuid4())},
             json={
                 "nome": "Cliente de integração",
                 "cpf": _cpf_valido(),

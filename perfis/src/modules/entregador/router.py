@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from src.core.database import get_db
@@ -17,8 +17,12 @@ router = APIRouter(prefix="/entregadores", tags=["entregadores"])
 
 
 @router.post("", response_model=EntregadorResponse, status_code=201)
-def cadastrar_entregador(dados: EntregadorCreate, db: Session = Depends(get_db)):
-    return service.cadastrar_entregador(db, dados)
+def cadastrar_entregador(
+    dados: EntregadorCreate,
+    chave_idempotencia: UUID = Header(alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    return service.cadastrar_entregador(db, dados, chave_idempotencia)
 
 
 @router.get("", response_model=list[EntregadorResponse])

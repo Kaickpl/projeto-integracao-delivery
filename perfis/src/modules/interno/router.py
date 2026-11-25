@@ -15,6 +15,7 @@ router = APIRouter(prefix="/v1/interno", tags=["integração interna"])
 class StatusContaResponse(BaseModel):
     conta_id: UUID
     status: str
+    identidade_pronta: bool
 
 
 def exigir_credencial_servico(authorization: str | None = Header(default=None)) -> None:
@@ -33,4 +34,8 @@ def consultar_status_conta(
     perfil = db.get(Perfil, conta_id)
     if perfil is None:
         raise HTTPException(status_code=404, detail="Conta não encontrada")
-    return StatusContaResponse(conta_id=perfil.id, status=perfil.status.value)
+    return StatusContaResponse(
+        conta_id=perfil.id,
+        status=perfil.status.value,
+        identidade_pronta=perfil.identidade_pronta,
+    )

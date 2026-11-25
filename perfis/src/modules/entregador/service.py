@@ -10,7 +10,7 @@ from src.core.exceptions import (
     DadosInvalidos,
     PerfilNaoEncontrado,
 )
-from src.core.identidade import criar_credencial_e_associar_papel
+from src.core.provisionamento import provisionar_cadastro
 from src.modules.entregador.schemas import (
     MENSAGEM_VEICULO_SEM_DOCUMENTOS,
     EntregadorCreate,
@@ -21,7 +21,9 @@ from src.modules.perfil_usuario.entregador import Entregador, StatusEntregador
 from src.modules.perfil_usuario.perfil import StatusConta
 
 
-def cadastrar_entregador(db: Session, dados: EntregadorCreate) -> Entregador:
+def cadastrar_entregador(
+    db: Session, dados: EntregadorCreate, chave_idempotencia: UUID
+) -> Entregador:
     # A conta começa aguardando a aprovação do admin e o entregador começa
     # offline.
     entregador = Entregador(
@@ -29,12 +31,14 @@ def cadastrar_entregador(db: Session, dados: EntregadorCreate) -> Entregador:
         status=StatusConta.PENDENTE_APROVACAO,
         status_entregador=StatusEntregador.INATIVO,
     )
-    db.add(entregador)
-    db.flush()
-    criar_credencial_e_associar_papel(entregador.id, entregador.email, dados.senha, "ENTREGADOR")
-    salvar_alteracoes(db)
-    db.refresh(entregador)
-    return entregador
+    return provisionar_cadastro(
+        db,
+        entregador,
+        senha=dados.senha,
+        role="ENTREGADOR",
+        chave_idempotencia=chave_idempotencia,
+        dados_cadastro=dados.model_dump(exclude={"senha"}),
+    )
 
 
 def buscar_entregador(db: Session, entregador_id: UUID) -> Entregador:

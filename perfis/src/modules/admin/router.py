@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from src.core.database import get_db
@@ -33,8 +33,12 @@ def buscar_perfil(perfil_id: UUID, db: Session = Depends(get_db)):
 
 
 @router.post("/admins", response_model=PerfilAdminResponse, status_code=201)
-def criar_admin(dados: AdminCreate, db: Session = Depends(get_db)):
-    return service.criar_admin(db, dados)
+def criar_admin(
+    dados: AdminCreate,
+    chave_idempotencia: UUID = Header(alias="Idempotency-Key"),
+    db: Session = Depends(get_db),
+):
+    return service.criar_admin(db, dados, chave_idempotencia)
 
 
 @router.patch("/perfis/{perfil_id}", response_model=PerfilAdminResponse)

@@ -54,6 +54,7 @@
 ## Estado da integração com Financeiro
 
 - Implementada em Perfis a rota `GET /v1/perfis/{id}`. Exige JWT M2M RS256 validado localmente por JWKS, emissor configurado, audiência `PERFIS_OAUTH_AUDIENCE` e escopo `PERFIS_READ_SCOPE`; retorna somente `id`, `nome` e `email`.
+- Cadastro de usuário em Perfis agora requer `Idempotency-Key` e pode ser retomado com a mesma chave, evitando perfil sem credencial/papel após falha parcial; Perfis não persiste senha.
 - Para integração local, `iss=http://127.0.0.1:18001`, `aud/resource=http://perfis:8002` e `scope=perfis:ler`. Publicar os valores equivalentes do ambiente compartilhado quando a implantação existir.
 - O fluxo Authorization Code + PKCE de usuário foi testado localmente no Postman com conta ativa; o callback do Postman substituiu temporariamente o callback local e deve ser restaurado após o teste. Não há grant de senha.
 - Provisionar o cliente M2M real e conceder a permissão no RBAC somente depois de definir a audiência publicada. Entregar o segredo gerado pelo Auth ao Financeiro por canal privado, nunca em arquivo versionado ou issue.

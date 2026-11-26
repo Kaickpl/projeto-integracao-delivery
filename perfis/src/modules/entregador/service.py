@@ -1,7 +1,6 @@
 from uuid import UUID
 
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.core.database import salvar_alteracoes
@@ -10,7 +9,7 @@ from src.core.exceptions import (
     DadosInvalidos,
     PerfilNaoEncontrado,
 )
-from src.core.provisionamento import provisionar_cadastro
+from src.core.provisionamento import provisionar_cadastro, remover_cadastro
 from src.modules.entregador.schemas import (
     MENSAGEM_VEICULO_SEM_DOCUMENTOS,
     EntregadorCreate,
@@ -102,11 +101,8 @@ def remover_entregador(db: Session, entregador_id: UUID) -> None:
     if entregador.status_entregador == StatusEntregador.OCUPADO:
         raise AcaoNaoPermitida("Não é possível apagar a conta durante uma entrega")
 
-    try:
-        db.delete(entregador)
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise AcaoNaoPermitida(
-            "Não foi possível remover: existem dados vinculados a este entregador"
-        )
+    remover_cadastro(
+        db,
+        entregador,
+        "Não foi possível remover: existem dados vinculados a este entregador",
+    )

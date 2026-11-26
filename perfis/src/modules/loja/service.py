@@ -1,7 +1,6 @@
 from uuid import UUID
 
 from sqlalchemy import case, func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, selectinload
 
 from src.core.database import salvar_alteracoes
@@ -10,7 +9,7 @@ from src.core.exceptions import (
     DadosInvalidos,
     PerfilNaoEncontrado,
 )
-from src.core.provisionamento import provisionar_cadastro
+from src.core.provisionamento import provisionar_cadastro, remover_cadastro
 from src.modules.loja.schemas import (
     MENSAGEM_TEMPO_ESTIMADO,
     HorariosUpdate,
@@ -157,11 +156,6 @@ def remover_loja(db: Session, loja_id: UUID) -> None:
     if loja.status_funcionamento == StatusFuncionamento.ABERTO:
         raise AcaoNaoPermitida("Feche a loja antes de apagar a conta")
 
-    try:
-        db.delete(loja)
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise AcaoNaoPermitida(
-            "Não foi possível remover: existem dados vinculados a esta loja"
-        )
+    remover_cadastro(
+        db, loja, "Não foi possível remover: existem dados vinculados a esta loja"
+    )

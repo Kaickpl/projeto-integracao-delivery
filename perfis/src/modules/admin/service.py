@@ -1,12 +1,11 @@
 from uuid import UUID
 
 from sqlalchemy import func, select
-from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.core.database import salvar_alteracoes
 from src.core.exceptions import AcaoNaoPermitida, PerfilNaoEncontrado
-from src.core.provisionamento import provisionar_cadastro
+from src.core.provisionamento import provisionar_cadastro, remover_cadastro
 from src.modules.admin.schemas import AdminCreate, PerfilAdminUpdate
 from src.modules.perfil_usuario.admin import Admin
 from src.modules.perfil_usuario.entregador import Entregador, StatusEntregador
@@ -86,11 +85,6 @@ def remover_perfil(db: Session, perfil_id: UUID) -> None:
         if total <= 1:
             raise AcaoNaoPermitida("Não é possível remover o último admin")
 
-    try:
-        db.delete(perfil)
-        db.commit()
-    except IntegrityError:
-        db.rollback()
-        raise AcaoNaoPermitida(
-            "Não foi possível remover: existem dados vinculados a este perfil"
-        )
+    remover_cadastro(
+        db, perfil, "Não foi possível remover: existem dados vinculados a este perfil"
+    )

@@ -7,8 +7,8 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from src.core.exceptions import AcaoNaoPermitida, DadoDuplicado
-from src.core.identidade import criar_credencial_e_associar_papel
+from src.core.exceptions import AcaoNaoPermitida, DadoDuplicado, ServicoIndisponivel
+from src.core.identidade import criar_credencial_e_associar_papel, remover_papel
 from src.modules.perfil_usuario.perfil import Perfil
 
 
@@ -70,3 +70,32 @@ def provisionar_cadastro(
     db.commit()
     db.refresh(perfil)
     return perfil
+
+
+def remover_cadastro(db: Session, perfil: Perfil, mensagem_vinculo: str) -> None:
+    """Apaga o perfil e remove o papel da conta no RBAC.
+
+    O DELETE é enviado ao banco (flush) antes de chamar o RBAC, para descobrir
+    cedo se há dados vinculados. O papel sai do RBAC antes do commit: se o RBAC
+    falhar, nada muda; se o commit falhar depois, a conta fica sem acesso e o
+    DELETE pode ser repetido, porque a remoção no RBAC é idempotente.
+    """
+    conta_id = perfil.id
+    try:
+        db.delete(perfil)
+        db.flush()
+    except IntegrityError:
+        db.rollback()
+        raise AcaoNaoPermitida(mensagem_vinculo) from None
+
+    try:
+        remover_papel(conta_id)
+    except ServicoIndisponivel:
+        db.rollback()
+        raise
+
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        raise AcaoNaoPermitida(mensagem_vinculo) from None

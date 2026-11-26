@@ -56,6 +56,25 @@ services:
       banco_integracao:
         condition: service_healthy
 
+  # Cria o primeiro ADMIN depois que Auth, Perfis e RBAC estiverem no ar.
+  preparar_admin_inicial:
+    build: ./perfis
+    working_dir: /code
+    command: >-
+      python -m src.criar_admin_inicial
+      --nome "Admin de integração" --email admin-integracao@example.com
+      --cpf 52998224725 --telefone 81999990000 --data-nascimento 1990-01-31
+    environment:
+      DATABASE_URL: postgresql+psycopg://integracao_teste:integracao_teste_local@banco_integracao:5432/delivery_teste
+      AUTENTICACAO_URL: http://autenticacao:8001
+      AUTENTICACAO_SERVICE_TOKEN: teste-perfis-auth
+      AUTORIZACAO_URL: http://autorizacao:8003
+      AUTORIZACAO_SERVICE_TOKEN: teste-perfis-rbac
+      ADMIN_INICIAL_SENHA: Admin-integracao-2026
+    depends_on:
+      banco_integracao:
+        condition: service_healthy
+
   autenticacao:
     build: ./autenticacao
     working_dir: /code

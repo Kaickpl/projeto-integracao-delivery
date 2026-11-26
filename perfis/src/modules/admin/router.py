@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, Header, Query
 from sqlalchemy.orm import Session
 
 from src.core.database import get_db
+from src.core.permissoes import protegida
 from src.modules.admin import service
 from src.modules.admin.schemas import (
     AdminCreate,
@@ -16,7 +17,11 @@ from src.modules.perfil_usuario.perfil import StatusConta, TipoPerfil
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 
-@router.get("/perfis", response_model=list[PerfilAdminResponse])
+@router.get(
+    "/perfis",
+    response_model=list[PerfilAdminResponse],
+    **protegida(qualquer="perfis:listar"),
+)
 def listar_perfis(
     tipo: TipoPerfil | None = None,
     status: StatusConta | None = None,
@@ -27,12 +32,21 @@ def listar_perfis(
     return service.listar_perfis(db, tipo, status, skip, limit)
 
 
-@router.get("/perfis/{perfil_id}", response_model=PerfilAdminResponse)
+@router.get(
+    "/perfis/{perfil_id}",
+    response_model=PerfilAdminResponse,
+    **protegida(qualquer="perfis:listar"),
+)
 def buscar_perfil(perfil_id: UUID, db: Session = Depends(get_db)):
     return service.buscar_perfil(db, perfil_id)
 
 
-@router.post("/admins", response_model=PerfilAdminResponse, status_code=201)
+@router.post(
+    "/admins",
+    response_model=PerfilAdminResponse,
+    status_code=201,
+    **protegida(qualquer="admins:criar"),
+)
 def criar_admin(
     dados: AdminCreate,
     chave_idempotencia: UUID = Header(alias="Idempotency-Key"),
@@ -41,16 +55,28 @@ def criar_admin(
     return service.criar_admin(db, dados, chave_idempotencia)
 
 
-@router.patch("/perfis/{perfil_id}", response_model=PerfilAdminResponse)
+@router.patch(
+    "/perfis/{perfil_id}",
+    response_model=PerfilAdminResponse,
+    **protegida(qualquer="perfis:editar_qualquer"),
+)
 def atualizar_perfil(perfil_id: UUID, dados: PerfilAdminUpdate, db: Session = Depends(get_db)):
     return service.atualizar_perfil(db, perfil_id, dados)
 
 
-@router.patch("/perfis/{perfil_id}/status", response_model=PerfilAdminResponse)
+@router.patch(
+    "/perfis/{perfil_id}/status",
+    response_model=PerfilAdminResponse,
+    **protegida(qualquer="perfis:alterar_status"),
+)
 def alterar_status_de_perfil(perfil_id: UUID, dados: StatusUpdate, db: Session = Depends(get_db)):
     return service.alterar_status(db, perfil_id, dados.status)
 
 
-@router.delete("/perfis/{perfil_id}", status_code=204)
+@router.delete(
+    "/perfis/{perfil_id}",
+    status_code=204,
+    **protegida(qualquer="perfis:remover_qualquer"),
+)
 def remover_perfil(perfil_id: UUID, db: Session = Depends(get_db)):
     service.remover_perfil(db, perfil_id)

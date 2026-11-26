@@ -188,9 +188,23 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
         assert bloqueado.status_code == 403
         assert "access_token" not in bloqueado.text
 
+        # A rota de admin exige token com perfis:alterar_status. O ADMIN é
+        # criado antes pelo serviço preparar_admin_inicial da pilha local.
+        sem_token = client.patch(
+            f"{perfis_url}/admin/perfis/{conta_id}/status",
+            json={"status": "ATIVO"},
+        )
+        assert sem_token.status_code == 401
+        tokens_admin = _autenticar(
+            client,
+            auth_url,
+            os.getenv("INTEGRATION_ADMIN_EMAIL", "admin-integracao@example.com"),
+            os.getenv("INTEGRATION_ADMIN_SENHA", "Admin-integracao-2026"),
+        )
         ativacao = client.patch(
             f"{perfis_url}/admin/perfis/{conta_id}/status",
             json={"status": "ATIVO"},
+            headers={"Authorization": f"Bearer {tokens_admin['access_token']}"},
         )
         assert ativacao.status_code == 200, ativacao.text
 

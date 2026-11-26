@@ -162,6 +162,28 @@ class LojaResponse(BaseModel):
     atualizado_em: datetime
 
 
+class LojaPublicaResponse(BaseModel):
+    """O que qualquer pessoa vê na vitrine. Sem CNPJ, e-mail e telefone."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: UUID
+    nome: str
+    status: StatusConta
+    razao_social: str
+    descricao: str | None
+    url_imagem: str | None
+    categoria: CategoriaLoja
+    taxa_entrega: int
+    valor_minimo_pedido: int
+    tempo_estimado_min: int | None
+    tempo_estimado_max: int | None
+    status_funcionamento: StatusFuncionamento
+    endereco: EnderecoResponse
+    criado_em: datetime
+    atualizado_em: datetime
+
+
 class Horario(BaseModel):
     """Um intervalo de funcionamento, no horário local da loja."""
 

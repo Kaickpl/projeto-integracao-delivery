@@ -37,6 +37,16 @@ docker compose -f Docker-compose.integracao.yml run --rm autorizacao python -m a
 docker compose -f Docker-compose.integracao.yml up -d autenticacao autenticacao_replica perfis autorizacao
 ```
 
+## Criar o primeiro ADMIN
+
+As rotas `/admin/*` de Perfis exigem um token de ADMIN. Com as APIs no ar, crie o administrador usado pelo teste:
+
+```powershell
+docker compose -f Docker-compose.integracao.yml run --build --rm preparar_admin_inicial
+```
+
+O comando é idempotente: se já existir um ADMIN ativo, nada é criado. O teste usa `admin-integracao@example.com` e a senha de teste definida no Compose; para usar outro, defina `INTEGRATION_ADMIN_EMAIL` e `INTEGRATION_ADMIN_SENHA`.
+
 ## Executar o teste ponta a ponta
 
 Use o ambiente virtual de `autenticacao`. Esses valores são exclusivos da pilha de teste e não são segredos de produção:
@@ -59,7 +69,7 @@ python -m pytest tests/test_integracao_servicos.py -q
 
 Para incluir o teste de persistência após reiniciar uma instância Auth, antes do `pytest` defina `$env:INTEGRATION_RESTART_AUTH_REPLICA = "1"`. O teste reinicia somente `autenticacao_replica`, espera o health check e verifica que o refresh revogado segue inválido e que o RBAC continua retornando `401`.
 
-O teste cria um cliente com CPF válido aleatório, envia `Idempotency-Key` UUID, verifica que o status pendente impede a autorização, ativa a conta no ambiente descartável, consulta o papel no RBAC, conclui Authorization Code + PKCE, valida assinatura e claims via JWKS, verifica o access token no endpoint RBAC, renova e revoga em outra instância Auth com a mesma persistência, tenta reutilizar o refresh anterior e confirma que o RBAC retorna `401` após a revogação. Também testa logout com access token e confirma que o refresh da família deixa de funcionar. O endpoint de perfil administrativo usado para ativar a conta não deve ser exposto sem autorização fora deste ambiente.
+O teste cria um cliente com CPF válido aleatório, envia `Idempotency-Key` UUID, verifica que o status pendente impede a autorização, confirma que a ativação sem token recebe `401`, ativa a conta com o token do ADMIN, consulta o papel no RBAC, conclui Authorization Code + PKCE, valida assinatura e claims via JWKS, verifica o access token no endpoint RBAC, renova e revoga em outra instância Auth com a mesma persistência, tenta reutilizar o refresh anterior e confirma que o RBAC retorna `401` após a revogação. Também testa logout com access token e confirma que o refresh da família deixa de funcionar.
 
 O mesmo arquivo de teste inclui Client Credentials para permissões de pagamento e leitura de perfil, usando clientes temporários criados pelas fixtures somente no banco local. Ele solicita tokens com Basic, valida assinatura/claims via JWKS e consulta `GET /v1/perfis/{id}` com `perfis:ler`. As fixtures gravam a partir do container Auth e recusam qualquer banco que não esteja no host `banco_integracao`, com usuário `integracao_teste` e nome iniciado por `delivery_teste`. Com `INTEGRATION_RESTART_AUTH_REPLICA=1`, também reinicia a réplica e confirma que ela continua autenticando o cliente pelo estado persistido no banco.
 

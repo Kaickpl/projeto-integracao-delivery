@@ -18,14 +18,18 @@ from src.main import app
 
 
 class BancoFalso:
-    def __init__(self, papel=None, erro=None):
+    def __init__(self, papel=None, erro=None, permissoes=None):
         self.papel = papel
         self.erro = erro
+        self.permissoes = permissoes or []
 
     def get(self, _modelo, _conta_id):
         if self.erro:
             raise self.erro
         return self.papel
+
+    def scalars(self, _consulta):
+        return SimpleNamespace(all=lambda: self.permissoes)
 
 
 class BancoEscopos:
@@ -74,7 +78,7 @@ def preparar_cliente(monkeypatch, banco, introspeccao=None, falha_http=None):
 
 def test_token_ativo_e_papel_atual_sao_devolvidos(monkeypatch):
     conta_id, jti = uuid4(), str(uuid4())
-    banco = BancoFalso(SimpleNamespace(role="LOJA"))
+    banco = BancoFalso(SimpleNamespace(role="LOJA"), permissoes=["loja:operar"])
     cliente, chamadas = preparar_cliente(
         monkeypatch,
         banco,
@@ -91,6 +95,7 @@ def test_token_ativo_e_papel_atual_sao_devolvidos(monkeypatch):
             "conta_id": str(conta_id),
             "role": "LOJA",
             "jti": jti,
+            "permissoes": ["loja:operar"],
         }
         assert chamadas[0][0] == "http://auth-teste/v1/oauth/introspeccao"
         assert chamadas[0][1]["json"] == {"token": "access-secreto"}

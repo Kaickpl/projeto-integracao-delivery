@@ -449,6 +449,69 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
             ).status_code == 401
 
 
+def test_bloqueio_concorrente_de_login_compartilhado_entre_instancias():
+    bases = _ambiente_integracao()
+    auth, replica, perfis = bases["AUTH"], bases["AUTH_REPLICA"], bases["PERFIS"]
+    email = f"teste-{uuid.uuid4().hex}@example.com"
+    senha = "Senha-integracao-2026!"
+    with httpx.Client(timeout=10, follow_redirects=False) as client:
+        cadastro = client.post(
+            f"{perfis}/admin/admins",
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+            json={
+                "nome": "Admin de integração",
+                "cpf_cnpj": _cpf_valido(),
+                "email": email,
+                "senha": senha,
+                "telefone": "71999990000",
+                "data_nascimento": "1995-08-20",
+            },
+        )
+        assert cadastro.status_code == 201, cadastro.text
+        conta_id = cadastro.json()["id"]
+        troca_anterior = _obter_dados_da_troca(client, auth, email, senha)
+        formulario = {
+            "client_id": "delivery-app",
+            "redirect_uri": "http://localhost:3000/oauth/callback",
+            "response_type": "code",
+            "code_challenge": _desafio(secrets.token_urlsafe(32)),
+            "code_challenge_method": "S256",
+            "state": secrets.token_urlsafe(24),
+            "email": email,
+        }
+
+        def autenticar(base, senha_enviada):
+            return client.post(f"{base}/v1/oauth/entrar", data={**formulario, "senha": senha_enviada})
+
+        for _ in range(4):
+            assert autenticar(auth, "senha-errada").status_code == 401
+        assert autenticar(replica, senha).status_code == 303
+
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            falhas = list(executor.map(
+                lambda base: autenticar(base, "senha-errada"), [auth, replica, auth, replica, auth],
+            ))
+        for resposta in [*falhas, autenticar(auth, senha), autenticar(replica, senha)]:
+            assert resposta.status_code == 401
+            assert resposta.json() == {"detail": "Usuário ou senha inválidos"}
+            assert "location" not in resposta.headers
+        troca = client.post(f"{replica}/v1/oauth/tokens", data=troca_anterior)
+        assert troca.status_code == 401
+        assert troca.json() == {"detail": "Usuário ou senha inválidos"}
+        status = client.get(
+            f"{perfis}/v1/interno/contas/{conta_id}/status",
+            headers={"Authorization": f"Bearer {os.environ['INTEGRATION_PERFIS_TOKEN']}"},
+        )
+        assert status.status_code == 200
+        assert status.json()["status"] == "ATIVO"
+
+        if os.getenv("INTEGRATION_RESTART_AUTH_REPLICA") == "1":
+            _reiniciar_replica_auth_e_aguardar(replica)
+            persistiu = autenticar(replica, senha)
+            assert persistiu.status_code == 401
+            assert persistiu.json() == {"detail": "Usuário ou senha inválidos"}
+
+
 def test_client_credentials_emite_token_limitado_validado_por_jwks_e_rbac():
     bases = _ambiente_integracao()
     auth_url, rbac_url = bases["AUTH"], bases["RBAC"]

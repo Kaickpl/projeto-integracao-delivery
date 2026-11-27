@@ -9,22 +9,27 @@ from urllib.parse import quote
 import httpx
 import jwt
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from src.core.config import Settings
-from src.core.security import verificar_senha
+from src.core.security import gerar_hash_senha, verificar_senha
 from src.core.tokens import (
     carregar_chave_publica,
     emitir_access_token,
     emitir_access_token_servico,
 )
 from src.modules.credenciais.repository import RepositorioCredenciais
+from src.modules.credenciais.models import Credencial
 from src.modules.clientes_servico.repository import RepositorioClientesServico
 from src.modules.sessoes.models import CodigoAutorizacao, SessaoRefresh
 
 PAPEIS_VALIDOS = {"CLIENTE", "LOJA", "ENTREGADOR", "ADMIN"}
 DIAS_REFRESH = 7
+LIMITE_FALHAS_LOGIN = 5
+JANELA_LOGIN = timedelta(minutes=15)
+MENSAGEM_CREDENCIAIS_INVALIDAS = "Usuário ou senha inválidos"
+_HASH_FICTICIO = gerar_hash_senha(secrets.token_urlsafe(32))
 
 
 class EscopoClienteNaoAutorizado(HTTPException):
@@ -172,12 +177,44 @@ def _bloquear_familia(db: Session, sessao_id: UUID) -> bool:
     return ancora is not None
 
 
+def _hora_decisao(db: Session) -> datetime:
+    return db.scalar(select(func.clock_timestamp()))
+
+
+def _login_bloqueado(credencial: Credencial, agora: datetime) -> bool:
+    prazo = credencial.login_bloqueado_ate
+    return prazo is not None and agora < prazo
+
+
+def _validar_credencial_para_login(db: Session, email: str, senha: str) -> Credencial:
+    credencial = RepositorioCredenciais(db).buscar_por_email(email, bloquear=True)
+    if credencial is None:
+        verificar_senha(senha, _HASH_FICTICIO)
+        raise HTTPException(401, MENSAGEM_CREDENCIAIS_INVALIDAS)
+
+    agora = _hora_decisao(db)
+    if _login_bloqueado(credencial, agora):
+        verificar_senha(senha, _HASH_FICTICIO)
+        raise HTTPException(401, MENSAGEM_CREDENCIAIS_INVALIDAS)
+    if verificar_senha(senha, credencial.senha_hash):
+        return credencial
+
+    falhas_recentes = [falha for falha in credencial.falhas_login if falha > agora - JANELA_LOGIN]
+    falhas_recentes.append(agora)
+    credencial.falhas_login = falhas_recentes
+    credencial.login_bloqueado_ate = (
+        agora + JANELA_LOGIN if len(falhas_recentes) >= LIMITE_FALHAS_LOGIN else None
+    )
+    db.commit()
+    raise HTTPException(401, MENSAGEM_CREDENCIAIS_INVALIDAS)
+
+
 def login(db: Session, email: str, senha: str, client_id: str, audience: str):
-    credencial = RepositorioCredenciais(db).buscar_por_email(email)
-    if not credencial or not verificar_senha(senha, credencial.senha_hash):
-        raise HTTPException(401, "Usuário ou senha inválidos")
+    credencial = _validar_credencial_para_login(db, email, senha)
     _, role = obter_status_e_papel(credencial.conta_id)
     resposta = emitir_par(db, credencial.conta_id, role, client_id, audience)
+    credencial.falhas_login = []
+    credencial.login_bloqueado_ate = None
     db.commit()
     return resposta
 
@@ -317,9 +354,7 @@ def autorizar(db: Session, email: str, senha: str, client_id: str, redirect_uri:
     config = Settings()
     if client_id != config.OAUTH_CLIENT_ID or redirect_uri != config.OAUTH_REDIRECT_URI:
         raise HTTPException(400, "Cliente ou endereço de retorno inválido")
-    credencial = RepositorioCredenciais(db).buscar_por_email(email)
-    if not credencial or not verificar_senha(senha, credencial.senha_hash):
-        raise HTTPException(401, "Usuário ou senha inválidos")
+    credencial = _validar_credencial_para_login(db, email, senha)
     _, _role = obter_status_e_papel(credencial.conta_id)
     codigo = secrets.token_urlsafe(32)
     db.add(CodigoAutorizacao(
@@ -331,6 +366,8 @@ def autorizar(db: Session, email: str, senha: str, client_id: str, redirect_uri:
         code_challenge=challenge,
         expira_em=datetime.now(timezone.utc) + timedelta(minutes=3),
     ))
+    credencial.falhas_login = []
+    credencial.login_bloqueado_ate = None
     db.commit()
     return codigo
 
@@ -346,12 +383,17 @@ def trocar_codigo(db: Session, codigo: str, verifier: str, client_id: str, redir
         .where(CodigoAutorizacao.codigo_hash == hashlib.sha256(codigo.encode()).hexdigest())
         .with_for_update()
     )
-    agora = datetime.now(timezone.utc)
-    if registro is None or registro.usado_em is not None or registro.expira_em <= agora:
+    if registro is None or registro.usado_em is not None:
         raise HTTPException(400, "Código de autorização inválido ou expirado")
     desafio = base64.urlsafe_b64encode(hashlib.sha256(verifier.encode()).digest()).rstrip(b"=").decode()
     if not secrets.compare_digest(desafio, registro.code_challenge):
         raise HTTPException(400, "Verificador PKCE inválido")
+    credencial = RepositorioCredenciais(db).buscar_por_conta_id(registro.conta_id, bloquear=True)
+    agora = _hora_decisao(db)
+    if registro.expira_em <= agora:
+        raise HTTPException(400, "Código de autorização inválido ou expirado")
+    if credencial is None or _login_bloqueado(credencial, agora):
+        raise HTTPException(401, MENSAGEM_CREDENCIAIS_INVALIDAS)
     _, role = obter_status_e_papel(registro.conta_id)
     registro.usado_em = agora
     resposta = emitir_par(db, registro.conta_id, role, client_id, config.JWT_AUDIENCE)

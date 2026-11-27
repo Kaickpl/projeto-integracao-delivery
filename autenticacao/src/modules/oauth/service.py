@@ -40,12 +40,15 @@ def _consultar_servico(url: str, token: str, caminho: str) -> dict:
             timeout=Settings().INTEGRATION_TIMEOUT_SECONDS,
         )
         resposta.raise_for_status()
-        return resposta.json()
+        dados = resposta.json()
+        if not isinstance(dados, dict):
+            raise ValueError("Resposta interna esperada como objeto")
+        return dados
     except httpx.HTTPStatusError as exc:
         if exc.response.status_code == 404:
             raise HTTPException(403, "Conta não elegível para autenticação") from None
         raise HTTPException(503, "Serviço de identidade indisponível") from None
-    except httpx.HTTPError:
+    except (httpx.HTTPError, ValueError):
         raise HTTPException(503, "Serviço de identidade indisponível") from None
 
 
@@ -56,17 +59,24 @@ def obter_status_e_papel(conta_id: UUID) -> tuple[str, str]:
         config.PERFIS_STATUS_SERVICE_TOKEN.get_secret_value(),
         f"/v1/interno/contas/{conta_id}/status",
     )
+    status = perfil.get("status")
+    identidade_pronta = perfil.get("identidade_pronta")
+    if (
+        perfil.get("conta_id") != str(conta_id)
+        or status not in ("ATIVO", "PENDENTE_APROVACAO", "SUSPENSO")
+        or not isinstance(identidade_pronta, bool)
+    ):
+        raise HTTPException(503, "Resposta inválida do serviço de Perfis")
+    if status != "ATIVO" or not identidade_pronta:
+        raise HTTPException(403, "Conta não está ativa")
+
     papel = _consultar_servico(
         config.AUTORIZACAO_URL,
         config.AUTORIZACAO_SERVICE_TOKEN.get_secret_value(),
         f"/v1/interno/contas/{conta_id}/papel",
     )
-    status = perfil.get("status")
-    identidade_pronta = perfil.get("identidade_pronta", True)
     role = papel.get("role")
-    if status != "ATIVO" or identidade_pronta is not True:
-        raise HTTPException(403, "Conta não está ativa")
-    if role not in PAPEIS_VALIDOS:
+    if not isinstance(role, str) or role not in PAPEIS_VALIDOS:
         raise HTTPException(403, "Papel da conta inválido")
     return status, role
 

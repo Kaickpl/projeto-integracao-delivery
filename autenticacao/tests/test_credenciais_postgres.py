@@ -2,6 +2,7 @@ import logging
 import os
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from threading import Barrier
 from uuid import uuid4
@@ -207,6 +208,62 @@ def test_login_recusado_nao_grava_codigo_ou_sessao(
     with fabrica() as sessao:
         assert sessao.scalar(select(CodigoAutorizacao).where(CodigoAutorizacao.conta_id == conta_id)) is None
         assert sessao.scalar(select(SessaoRefresh).where(SessaoRefresh.conta_id == conta_id)) is None
+
+
+def test_janela_deslizante_expira_e_login_limpa_historico(banco_migrado, monkeypatch):
+    _, fabrica, _ = banco_migrado
+    agora = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(service, "_hora_decisao", lambda _: agora)
+    monkeypatch.setattr(service, "obter_status_e_papel", lambda _: ("ATIVO", "CLIENTE"))
+    monkeypatch.setenv("OAUTH_CLIENT_ID", "delivery-app")
+    monkeypatch.setenv("OAUTH_REDIRECT_URI", "http://localhost:3000/oauth/callback")
+    conta_id = uuid4()
+    email = f"{uuid4().hex}@example.com"
+    senha = "Senha-do-teste"
+    with fabrica.begin() as sessao:
+        RepositorioCredenciais(sessao).criar(conta_id, email, senha)
+
+    def login(cliente, senha_enviada):
+        return cliente.post("/v1/oauth/entrar", data={
+            "email": email,
+            "senha": senha_enviada,
+            "client_id": "delivery-app",
+            "redirect_uri": "http://localhost:3000/oauth/callback",
+            "response_type": "code",
+            "code_challenge": "a" * 43,
+            "code_challenge_method": "S256",
+            "state": "estado-do-teste",
+        })
+
+    with TestClient(app, follow_redirects=False) as cliente:
+        assert login(cliente, "senha-errada").status_code == 401
+        agora += timedelta(minutes=15)
+        for _ in range(4):
+            assert login(cliente, "senha-errada").status_code == 401
+        with fabrica() as sessao:
+            credencial = sessao.get(Credencial, conta_id)
+            assert credencial.falhas_login == [agora] * 4
+            assert credencial.login_bloqueado_ate is None
+        assert login(cliente, "senha-errada").status_code == 401
+        prazo = agora + timedelta(minutes=15)
+        agora = prazo - timedelta(microseconds=1)
+        bloqueada = login(cliente, senha)
+        assert bloqueada.status_code == 401
+        assert bloqueada.json() == {"detail": "Usuário ou senha inválidos"}
+        with fabrica() as sessao:
+            credencial = sessao.get(Credencial, conta_id)
+            assert credencial.login_bloqueado_ate == prazo
+            assert len(credencial.falhas_login) == 5
+            assert sessao.scalar(select(CodigoAutorizacao).where(CodigoAutorizacao.conta_id == conta_id)) is None
+
+        agora = prazo
+        assert login(cliente, senha).status_code == 303
+        assert login(cliente, "senha-errada").status_code == 401
+        assert login(cliente, senha).status_code == 303
+        with fabrica() as sessao:
+            credencial = sessao.get(Credencial, conta_id)
+            assert credencial.login_bloqueado_ate is None
+            assert credencial.falhas_login == []
 
 
 def test_persiste_e_recupera_apenas_o_hash_da_senha(banco_migrado, caplog):

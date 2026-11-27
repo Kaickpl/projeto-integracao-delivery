@@ -49,6 +49,18 @@ devolve `403` ou `503`. Os erros HTTP dessas operações de usuário usam
 `{"detail": "mensagem em português"}`. A validação dos campos obrigatórios
 continua respondendo `422` com detalhes por campo.
 
+### Bloqueio temporário de login
+
+A quinta senha incorreta para uma conta em uma janela de 15 minutos inicia
+um bloqueio de 15 minutos. O PostgreSQL de escrita mantém o histórico e o
+prazo compartilhados entre as instâncias. Senha incorreta, e-mail inexistente
+e bloqueio usam o mesmo `401`. Durante o bloqueio, até uma senha correta
+ou a troca de um código emitido anteriormente recebe `401`.
+
+Tentativas durante o bloqueio não prorrogam seu prazo. O login bem-sucedido
+limpa o histórico. A decisão não altera o status cadastral em Perfis.
+Aplicar a migração de Auth uma vez antes de atualizar as instâncias.
+
 ### Serviço para serviço
 
 Client Credentials usa `client_secret_basic`, `resource` como URI absoluta (RFC 8707) e `scope` com escopos separados por espaço em `POST /v1/oauth/tokens`. Erros incluem `error` OAuth estável e a mensagem comum em português. O Auth armazena somente hash Argon2id de credenciais individuais. Antes de emitir, consulta a política autoritativa de audiência/escopos no RBAC. O grant fica desativado por padrão até o aceite dos consumidores e do RBAC; quando habilitado, é publicado nos metadados.

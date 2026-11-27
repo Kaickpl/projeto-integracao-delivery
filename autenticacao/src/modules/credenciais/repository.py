@@ -21,11 +21,13 @@ class RepositorioCredenciais:
         self.sessao.flush()
         return credencial
 
-    def buscar_por_conta_id(self, conta_id: UUID) -> Credencial | None:
-        return self.sessao.get(Credencial, conta_id)
+    def buscar_por_conta_id(self, conta_id: UUID, *, bloquear: bool = False) -> Credencial | None:
+        return self.sessao.get(Credencial, conta_id, with_for_update=bloquear or None)
 
-    def buscar_por_email(self, email: str) -> Credencial | None:
+    def buscar_por_email(self, email: str, *, bloquear: bool = False) -> Credencial | None:
         consulta = select(Credencial).where(
             func.lower(Credencial.email) == func.lower(email.strip())
         )
+        if bloquear:
+            consulta = consulta.with_for_update()
         return self.sessao.scalar(consulta)

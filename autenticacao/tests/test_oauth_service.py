@@ -45,7 +45,7 @@ class FakeDB:
 
 
 def test_login_rejeita_credencial_invalida(monkeypatch):
-    monkeypatch.setattr(service.RepositorioCredenciais, "buscar_por_email", lambda *_: None)
+    monkeypatch.setattr(service.RepositorioCredenciais, "buscar_por_email", lambda *_, **__: None)
     with pytest.raises(HTTPException) as erro:
         service.login(FakeDB(), "a@b.com", "senha", "app", "api")
     assert erro.value.status_code == 401
@@ -53,8 +53,9 @@ def test_login_rejeita_credencial_invalida(monkeypatch):
 
 def test_login_valido_consulta_status_e_emite_par(monkeypatch):
     conta_id = uuid4()
-    cred = SimpleNamespace(conta_id=conta_id, senha_hash="hash")
-    monkeypatch.setattr(service.RepositorioCredenciais, "buscar_por_email", lambda *_: cred)
+    cred = SimpleNamespace(conta_id=conta_id, senha_hash="hash", login_bloqueado_ate=None)
+    monkeypatch.setattr(service.RepositorioCredenciais, "buscar_por_email", lambda *_, **__: cred)
+    monkeypatch.setattr(service, "_hora_decisao", lambda _: datetime.now(timezone.utc))
     monkeypatch.setattr(service, "verificar_senha", lambda *_: True)
     monkeypatch.setattr(service, "obter_status_e_papel", lambda *_: ("ATIVO", "CLIENTE"))
     monkeypatch.setattr(service, "emitir_par", lambda *_: {"access_token": "a", "refresh_token": "r"})
@@ -122,6 +123,9 @@ def test_troca_codigo_valida_pkce_e_emite_tokens(monkeypatch):
     monkeypatch.setattr(service, "obter_status_e_papel", lambda *_: ("ATIVO", "LOJA"))
     monkeypatch.setattr(service, "emitir_par", lambda *_: {"access_token": "ok"})
     db = FakeDB(registro)
+    monkeypatch.setattr(service.RepositorioCredenciais, "buscar_por_conta_id",
+                        lambda *_, **__: SimpleNamespace(login_bloqueado_ate=None))
+    monkeypatch.setattr(service, "_hora_decisao", lambda _: datetime.now(timezone.utc))
     assert service.trocar_codigo(db, "codigo", verifier, "app", "https://app.test/callback")["access_token"] == "ok"
     assert registro.usado_em is not None
 

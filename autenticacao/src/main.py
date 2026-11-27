@@ -1,5 +1,6 @@
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 from src.core.config import Settings
@@ -7,6 +8,18 @@ from src.core.tokens import documento_jwks
 from src.modules.oauth.router import router as oauth_router
 
 app = FastAPI()
+origens = [
+    origem.strip()
+    for origem in Settings().CORS_ORIGENS_PERMITIDAS.split(",")
+    if origem.strip()
+]
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origens,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+    allow_credentials=False,
+)
 app.include_router(oauth_router)
 
 

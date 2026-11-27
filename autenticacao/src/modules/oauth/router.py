@@ -77,7 +77,9 @@ bearer_perfis = HTTPBearer(
 
 def _validar_cliente(client_id: str, redirect_uri: str, response_type: str, method: str) -> None:
     config = Settings()
-    if client_id != config.OAUTH_CLIENT_ID or redirect_uri != config.OAUTH_REDIRECT_URI:
+    if client_id != config.OAUTH_CLIENT_ID or redirect_uri not in getattr(
+        config, "oauth_redirect_uris_permitidos", {config.OAUTH_REDIRECT_URI}
+    ):
         raise HTTPException(400, "Cliente ou endereço de retorno inválido")
     if response_type != "code" or method != "S256":
         raise HTTPException(400, "Authorization Code exige response_type=code e PKCE S256")

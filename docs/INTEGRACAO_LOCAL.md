@@ -93,3 +93,7 @@ docker compose -f Docker-compose.integracao.yml down --volumes --remove-orphans
 ```
 
 Não substitua a configuração deste arquivo pelos `.env` da turma. As migrações e o teste criam/alteram dados e são destinados somente ao PostgreSQL local isolado.
+
+### Frontends e OAuth
+
+Auth permite configurar origens de navegador em `CORS_ORIGENS_PERMITIDAS` e callbacks OAuth em `OAUTH_REDIRECT_URI`/`OAUTH_REDIRECT_URIS` (listas separadas por vírgula). O exemplo local inclui `http://localhost:3000` e `http://localhost:5173`. No ambiente publicado, configure somente as origens e callbacks HTTPS exatos de cada frontend. O callback deve corresponder ao endereço onde aquele frontend recebe o código OAuth.

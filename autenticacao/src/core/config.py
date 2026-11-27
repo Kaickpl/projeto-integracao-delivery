@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     INTEGRATION_TIMEOUT_SECONDS: float = 2.0
     OAUTH_CLIENT_ID: str = "delivery-app"
     OAUTH_REDIRECT_URI: str = "http://localhost:3000/oauth/callback"
+    OAUTH_REDIRECT_URIS: str = ""
+    CORS_ORIGENS_PERMITIDAS: str = "http://localhost:3000,http://localhost:5173"
     JWT_AUDIENCE: str = "delivery-api"
     OAUTH_CLIENT_CREDENTIALS_ENABLED: bool = False
     OAUTH_SERVICE_TOKEN_MINUTES: int = 10
@@ -56,3 +58,7 @@ class Settings(BaseSettings):
         if not 1 <= valor <= 15:
             raise ValueError("OAUTH_SERVICE_TOKEN_MINUTES deve estar entre 1 e 15")
         return valor
+
+    @property
+    def oauth_redirect_uris_permitidos(self) -> set[str]:
+        return {self.OAUTH_REDIRECT_URI, *(uri.strip() for uri in self.OAUTH_REDIRECT_URIS.split(",") if uri.strip())}

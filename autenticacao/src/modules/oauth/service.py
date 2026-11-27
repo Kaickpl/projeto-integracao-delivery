@@ -386,7 +386,7 @@ def introspeccionar(db: Session, token: str) -> dict:
 
 def autorizar(db: Session, email: str, senha: str, client_id: str, redirect_uri: str, challenge: str):
     config = Settings()
-    if client_id != config.OAUTH_CLIENT_ID or redirect_uri != config.OAUTH_REDIRECT_URI:
+    if client_id != config.OAUTH_CLIENT_ID or redirect_uri not in config.oauth_redirect_uris_permitidos:
         raise HTTPException(400, "Cliente ou endereço de retorno inválido")
     credencial = _validar_credencial_para_login(db, email, senha)
     _, _role = obter_status_e_papel(credencial.conta_id)
@@ -410,7 +410,7 @@ def trocar_codigo(db: Session, codigo: str, verifier: str, client_id: str, redir
     if not re.fullmatch(r"[A-Za-z0-9._~-]{43,128}", verifier):
         raise HTTPException(400, "Verificador PKCE inválido")
     config = Settings()
-    if client_id != config.OAUTH_CLIENT_ID or redirect_uri != config.OAUTH_REDIRECT_URI:
+    if client_id != config.OAUTH_CLIENT_ID or redirect_uri not in config.oauth_redirect_uris_permitidos:
         raise HTTPException(400, "Cliente ou endereço de retorno inválido")
     registro = db.scalar(
         select(CodigoAutorizacao)

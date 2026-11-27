@@ -26,7 +26,9 @@ O grant de senha (`password`) não é aceito no endpoint de tokens. A senha é s
 1. Copie `.env.example` para `.env` e configure `DATABASE_URL`, caminhos da chave privada RS256 e credenciais serviço a serviço.
 2. A chave privada JWT deve ficar fora do Git. O `.env.example` contém somente placeholders.
 3. `PERFIS_SERVICE_TOKEN` deve corresponder ao token usado por Perfis ao criar credenciais. `AUTORIZACAO_SERVICE_TOKEN` autentica a consulta de papel e introspecção.
-4. Defina `PERFIS_URL`, `AUTORIZACAO_URL`, `OAUTH_CLIENT_ID`, `OAUTH_REDIRECT_URI`, `JWT_ISSUER` e `JWT_AUDIENCE` conforme o ambiente. No RBAC, configure `AUTHENTICACAO_URL` e `AUTHENTICACAO_SERVICE_TOKEN` para a introspecção online.
+4. Defina `PERFIS_URL`, `AUTORIZACAO_URL`, `OAUTH_CLIENT_ID`, `OAUTH_REDIRECT_URI`, `OAUTH_REDIRECT_URIS`, `CORS_ORIGENS_PERMITIDAS`, `JWT_ISSUER` e `JWT_AUDIENCE` conforme o ambiente. As listas de callbacks e origens usam valores separados por vírgula e devem conter URLs exatas, sem curingas. No RBAC, configure `AUTHENTICACAO_URL` e `AUTHENTICACAO_SERVICE_TOKEN` para a introspecção online.
+
+O CORS do Auth atende os frontends que fazem `fetch` para os metadados OAuth, troca/renovação de tokens e logout. A navegação para `/v1/oauth/autorizar` e o formulário `/v1/oauth/entrar` não dependem de CORS. Em desenvolvimento, o `.env.example` permite as origens `localhost:3000` e `localhost:5173`; no deploy, substitua pelas origens HTTPS publicadas. Registre todos os callbacks de cada aplicativo OAuth em `OAUTH_REDIRECT_URI` e `OAUTH_REDIRECT_URIS`.
 5. Mantenha `OAUTH_CLIENT_CREDENTIALS_ENABLED=false` até Financeiro, Catálogo e RBAC aprovarem o método Basic, os nomes de `resource`/escopos, `sub` e validade. `OAUTH_SERVICE_TOKEN_MINUTES` limita os tokens de serviço a no máximo 15 minutos.
 
 `PERFIS_STATUS_SERVICE_TOKEN` autentica Auth ao consultar status em Perfis. Ele deve corresponder a `INTERNAL_SERVICE_TOKEN` de Perfis. `PERFIS_SERVICE_TOKEN` autentica Perfis ao criar credenciais em Auth e deve corresponder a `AUTENTICACAO_SERVICE_TOKEN` de Perfis. Mantenha valores distintos para cada direção.

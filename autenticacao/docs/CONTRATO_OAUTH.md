@@ -12,6 +12,23 @@
 
 O cadastro distribuído em Perfis exige `Idempotency-Key` (UUID) nas rotas de criação. Perfis persiste primeiro o perfil com `identidade_pronta=false`, sem persistir senha, e então provisiona Auth e RBAC. Se uma dependência falhar ou a resposta se perder, a mesma requisição pode ser repetida com a mesma chave, mesmos dados e senha: Auth confirma idempotentemente a credencial existente e RBAC faz upsert do papel. Só após ambos confirmarem Perfis marca a identidade como pronta. Enquanto pendente, a conta não autentica e a leitura M2M do perfil responde `503`. Uma chave repetida com outros dados cadastrais recebe `409`.
 
+## Provisionamento interno (INT-02)
+
+Perfis chama `POST /v1/interno/credenciais` por HTTP síncrono, com seu token
+dedicado em `Authorization: Bearer`. O corpo contém `conta_id` (UUID gerado
+por Perfis), `email`, `senha` e `tipo_conta` (`CLIENTE`, `LOJA`,
+`ENTREGADOR` ou `ADMIN`). O Auth armazena o hash Argon2id da senha. O
+RabbitMQ não participa da operação.
+
+| Status | Resultado |
+| --- | --- |
+| 201 | Nova credencial. Corpo `{"conta_id": "<uuid>"}`. |
+| 200 | Mesmo UUID, e-mail e senha já provisionados. Mesmo corpo de sucesso. |
+| 400 | Tipo de conta inválido. |
+| 401 | Bearer de Perfis ausente ou inválido. |
+| 409 | E-mail vinculado a outra conta ou credencial divergente para o mesmo UUID. |
+| 422 | Dados inválidos. Os detalhes identificam os campos sem ecoar valores. |
+
 ## Fluxos OAuth 2.0
 
 ### Usuário interativo

@@ -1,6 +1,7 @@
 """Teste ponta a ponta contra Auth, Perfis e RBAC locais e isolados."""
 import base64
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
 import hashlib
 import os
 import re
@@ -135,6 +136,52 @@ def _reiniciar_replica_auth_e_aguardar(url: str) -> None:
             pass
         time.sleep(0.5)
     raise AssertionError("A réplica do Auth não voltou após o reinício")
+
+
+def test_perfis_recusa_admin_menor_de_idade_antes_de_provisionar():
+    bases = _ambiente_integracao()
+    hoje = date.today()
+    try:
+        maioridade = hoje.replace(year=hoje.year - 18)
+    except ValueError:  # 29/02 em ano sem data correspondente.
+        maioridade = hoje.replace(year=hoje.year - 18, day=28)
+    dados = {
+        "nome": "Admin de integração",
+        "cpf_cnpj": _cpf_valido(),
+        "email": f"teste-{uuid.uuid4().hex}@example.com",
+        "senha": "Senha-integracao-2026!",
+        "telefone": "71999990000",
+    }
+    headers = {"Idempotency-Key": str(uuid.uuid4())}
+    rota = f"{bases['PERFIS']}/admin/admins"
+    with httpx.Client(timeout=10, follow_redirects=False) as client:
+        recusada = client.post(
+            rota, headers=headers,
+            json={**dados, "data_nascimento": (maioridade + timedelta(days=1)).isoformat()},
+        )
+        assert recusada.status_code == 422
+        verificador = secrets.token_urlsafe(32)
+        login = client.post(
+            f"{bases['AUTH']}/v1/oauth/entrar",
+            data={
+                "email": dados["email"],
+                "senha": dados["senha"],
+                "client_id": "delivery-app",
+                "redirect_uri": "http://localhost:3000/oauth/callback",
+                "response_type": "code",
+                "code_challenge": _desafio(verificador),
+                "code_challenge_method": "S256",
+                "state": secrets.token_urlsafe(24),
+            },
+        )
+        assert login.status_code == 401
+        # O mesmo e-mail/CPF/chave deve criar um novo perfil e credencial.
+        criada = client.post(
+            rota, headers=headers, json={**dados, "data_nascimento": maioridade.isoformat()},
+        )
+        assert criada.status_code == 201, criada.text
+        assert criada.json()["status"] == "ATIVO"
+        assert _autenticar(client, bases["AUTH"], dados["email"], dados["senha"])["access_token"]
 
 
 def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():

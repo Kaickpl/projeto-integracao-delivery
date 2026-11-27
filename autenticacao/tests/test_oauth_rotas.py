@@ -47,7 +47,7 @@ def cliente_teste(monkeypatch):
 def test_erro_de_cadastro_preserva_campo_sem_expor_senha(
     monkeypatch, caplog, campos, senha, campo_invalido
 ):
-    dados = {"email": "teste@example.test", "tipo_conta": "CLIENTE", "senha": senha, **campos}
+    dados = {"email": "teste@example.com", "tipo_conta": "CLIENTE", "senha": senha, **campos}
     cliente = cliente_teste(monkeypatch)
     try:
         resposta = cliente.post("/v1/interno/credenciais", json=dados)

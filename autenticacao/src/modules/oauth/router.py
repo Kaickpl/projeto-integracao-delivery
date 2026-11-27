@@ -6,8 +6,9 @@ from html import escape
 from uuid import UUID
 from urllib.parse import parse_qsl, unquote_plus, urlencode, urlsplit, urlunsplit
 
-from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, Depends, Form, Header, HTTPException, Query, Security
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
+from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
@@ -45,10 +46,32 @@ def _erro_oauth_token(
 
 
 class CredencialInterna(BaseModel):
+    conta_id: UUID = Field(examples=["00000000-0000-4000-8000-000000000001"])
+    email: EmailStr = Field(examples=["cliente@example.com"])
+    senha: str = Field(min_length=6, max_length=256, examples=["senha-ficticia"])
+    tipo_conta: str = Field(examples=["CLIENTE"])
+
+    @field_validator("email", mode="before")
+    @classmethod
+    def validar_comprimento_email(cls, email: object) -> object:
+        if isinstance(email, str) and len(email) > 255:
+            raise ValueError("E-mail deve ter até 255 caracteres")
+        return email
+
+
+class CredencialCriada(BaseModel):
     conta_id: UUID
-    email: str = Field(min_length=3, max_length=255)
-    senha: str = Field(min_length=6, max_length=256)
-    tipo_conta: str
+
+
+class ErroCredencialInterna(BaseModel):
+    detail: str
+
+
+bearer_perfis = HTTPBearer(
+    scheme_name="CredencialServicoPerfis",
+    description="Token interno dedicado ao serviço de Perfis.",
+    auto_error=False,
+)
 
 
 def _validar_cliente(client_id: str, redirect_uri: str, response_type: str, method: str) -> None:
@@ -136,15 +159,28 @@ def entrar(
     )
 
 
-@router.post("/interno/credenciais", status_code=201)
+@router.post(
+    "/interno/credenciais",
+    status_code=201,
+    response_model=CredencialCriada,
+    summary="Provisionar credencial de um perfil (INT-02)",
+    description="Perfis envia o UUID do perfil. Repetir a mesma conta, e-mail e senha é idempotente.",
+    responses={
+        200: {"model": CredencialCriada, "description": "Credencial já provisionada"},
+        400: {"model": ErroCredencialInterna, "description": "Tipo de conta inválido"},
+        401: {"model": ErroCredencialInterna, "description": "Credencial de serviço inválida"},
+        409: {"model": ErroCredencialInterna, "description": "E-mail ou conta em conflito"},
+        422: {"description": "Dados inválidos; a resposta omite os valores enviados"},
+    },
+)
 def criar_credencial(
     dados: CredencialInterna,
-    authorization: str | None = Header(default=None),
+    authorization: HTTPAuthorizationCredentials | None = Security(bearer_perfis),
     db: Session = Depends(get_db),
 ):
     esperado = Settings().PERFIS_SERVICE_TOKEN.get_secret_value()
-    recebido = authorization.removeprefix("Bearer ") if authorization else ""
-    if not esperado or not secrets.compare_digest(recebido, esperado):
+    recebido = authorization.credentials if authorization else ""
+    if not esperado or not secrets.compare_digest(recebido.encode(), esperado.encode()):
         raise HTTPException(401, "Credencial de serviço inválida")
     if dados.tipo_conta not in service.PAPEIS_VALIDOS:
         raise HTTPException(400, "Tipo de conta inválido")

@@ -47,7 +47,26 @@ def placa_valida(placa: str) -> bool:
 
 
 def cnh_valida(cnh: str) -> bool:
-    return re.fullmatch(r"[0-9]{11}", cnh) is not None
+    """Confere formato e dígitos verificadores do registro da CNH.
+
+    Os 9 primeiros caracteres formam a base; os dois últimos são os DVs.
+    Mantém a entrada textual para preservar zeros à esquerda. Esta checagem
+    não consulta o DETRAN/SENATRAN nem confirma autenticidade ou situação.
+    """
+    if not isinstance(cnh, str) or not re.fullmatch(r"[0-9]{11}", cnh):
+        return False
+    if cnh == cnh[0] * 11:
+        return False
+
+    base = [int(digito) for digito in cnh[:9]]
+    primeiro_resto = sum(digito * peso for digito, peso in zip(base, range(9, 0, -1))) % 11
+    primeiro_dv = 0 if primeiro_resto == 10 else primeiro_resto
+    desconto = 2 if primeiro_resto == 10 else 0
+
+    segundo_resto = sum(digito * peso for digito, peso in zip(base, range(1, 10))) % 11
+    segundo_dv = 0 if segundo_resto == 10 else (segundo_resto - desconto) % 10
+
+    return primeiro_dv == int(cnh[9]) and segundo_dv == int(cnh[10])
 
 
 UFS = frozenset({

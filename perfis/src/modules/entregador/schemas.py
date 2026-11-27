@@ -44,7 +44,7 @@ def _validar_cnh(valor: str | None) -> str | None:
         return None
     cnh = limpar_documento(valor)
     if not cnh_valida(cnh):
-        raise ValueError("CNH deve ter 11 dígitos")
+        raise ValueError("CNH inválida: informe os 11 dígitos com verificadores corretos")
     return cnh
 
 

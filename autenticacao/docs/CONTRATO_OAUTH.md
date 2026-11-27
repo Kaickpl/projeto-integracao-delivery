@@ -5,7 +5,7 @@
 ## Serviços e responsabilidades
 
 - **Perfis** é responsável pelo cadastro dos quatro tipos de perfil: `CLIENTE`, `LOJA`, `ENTREGADOR` e `ADMIN`. O cadastro de cliente é feito em Perfis, não em Auth.
-- **Perfis** valida CPF por formato e dígitos verificadores, sem comprovação externa. O perfil de cliente começa com status `PENDENTE_APROVACAO`; Perfis governa sua transição para `ATIVO`.
+- **Perfis** valida CPF/CNPJ por formato e dígitos verificadores, sem comprovação externa. Cliente começa com `PENDENTE_APROVACAO`; contas LOJA e ENTREGADOR começam `ATIVO` após as validações cadastrais locais, sem aprovação administrativa. Para ENTREGADOR, a CNH é validada como 11 dígitos quando exigida pelo veículo; isso não comprova autenticidade ou situação do documento.
 - **Auth** mantém credenciais e sessões. Recebe de Perfis a solicitação interna INT-02 com e-mail, senha e tipo de conta, grava somente hash de senha e devolve `conta_id`.
 - `Perfil.id` e `Auth.conta_id` usam o mesmo UUID. O cadastro em Perfis só conclui o vínculo depois de obter esse identificador do Auth.
 - **Autorização/RBAC** é a fonte autoritativa da associação entre `conta_id` e papel. Auth não concede nem deduz papel a partir de campos cadastrais.

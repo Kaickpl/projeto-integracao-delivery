@@ -38,7 +38,9 @@ def cadastrar_loja(
         **dados.model_dump(exclude={"endereco", "senha"}),
         valor_minimo_pedido=0,
         endereco=Endereco(**dados.endereco.model_dump()),
-        status=StatusConta.PENDENTE_APROVACAO,
+        # O CNPJ já foi validado por formato e dígitos verificadores no schema.
+        # A conta LOJA não depende de aprovação administrativa para login.
+        status=StatusConta.ATIVO,
         status_funcionamento=StatusFuncionamento.FECHADO,
     )
     return provisionar_cadastro(

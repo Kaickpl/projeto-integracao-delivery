@@ -23,11 +23,12 @@ from src.modules.perfil_usuario.perfil import StatusConta
 def cadastrar_entregador(
     db: Session, dados: EntregadorCreate, chave_idempotencia: UUID
 ) -> Entregador:
-    # A conta começa aguardando a aprovação do admin e o entregador começa
-    # offline.
+    # O schema valida CPF, CNH (11 dígitos quando informada) e os documentos
+    # exigidos pelo veículo. A conta fica ativa sem aprovação administrativa;
+    # o entregador permanece offline até mudar o status operacional.
     entregador = Entregador(
         **dados.model_dump(exclude={"senha"}),
-        status=StatusConta.PENDENTE_APROVACAO,
+        status=StatusConta.ATIVO,
         status_entregador=StatusEntregador.INATIVO,
     )
     return provisionar_cadastro(

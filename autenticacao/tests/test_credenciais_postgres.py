@@ -9,13 +9,16 @@ from uuid import uuid4
 import pytest
 from alembic import command
 from alembic.config import Config
+from fastapi.testclient import TestClient
 from psycopg.errors import UniqueViolation
-from sqlalchemy import inspect, text
+from sqlalchemy import func, inspect, select, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.exc import IntegrityError
 
 from src.core.database import SCHEMA_AUTENTICACAO, get_db, obter_fabrica_sessoes
 from src.core.security import verificar_senha
+from src.main import app
+from src.modules.credenciais.models import Credencial
 from src.modules.credenciais.repository import RepositorioCredenciais
 
 
@@ -64,6 +67,7 @@ def test_migracao_cria_tabela_e_historico_isolado(banco_migrado):
             "credenciais",
             "sessoes_refresh",
             "codigos_autorizacao",
+            "clientes_servico",
             "alembic_version",
         }
         assert not tabelas.get_table_names()
@@ -81,6 +85,75 @@ def test_migracao_cria_tabela_e_historico_isolado(banco_migrado):
     finally:
         with fabrica.begin() as sessao:
             sessao.execute(text("DROP TABLE public.alembic_version"))
+
+
+def test_api_provisiona_idempotentemente_e_recusa_dados_invalidos(banco_migrado, monkeypatch, caplog):
+    _, fabrica, _ = banco_migrado
+    monkeypatch.setenv("PERFIS_SERVICE_TOKEN", "teste-perfis-auth")
+    dados = {
+        "conta_id": str(uuid4()),
+        "email": f"{uuid4().hex}@example.com",
+        "senha": "Senha-exclusiva-do-teste",
+        "tipo_conta": "CLIENTE",
+    }
+    rota = "/v1/interno/credenciais"
+    headers = {"Authorization": "Bearer teste-perfis-auth"}
+    with TestClient(app) as cliente:
+        recusas = [
+            cliente.post(rota, json=dados),
+            cliente.post(rota, json=dados, headers={"Authorization": "teste-perfis-auth"}),
+            cliente.post(rota, json=dados, headers={"Authorization": "Bearer errado"}),
+            cliente.post(rota, json={**dados, "tipo_conta": "OUTRO"}, headers=headers),
+            cliente.post(rota, json={**dados, "email": "sem-arroba"}, headers=headers),
+        ]
+        assert [resposta.status_code for resposta in recusas] == [401, 401, 401, 400, 422]
+        with fabrica() as sessao:
+            assert RepositorioCredenciais(sessao).buscar_por_email(dados["email"]) is None
+
+        criada = cliente.post(rota, json=dados, headers=headers)
+        repetida = cliente.post(rota, json=dados, headers=headers)
+        divergente = cliente.post(rota, json={**dados, "senha": "Outra-senha"}, headers=headers)
+        assert [criada.status_code, repetida.status_code, divergente.status_code] == [201, 200, 409]
+        assert criada.json() == repetida.json() == {"conta_id": dados["conta_id"]}
+
+    with fabrica() as sessao:
+        credencial = RepositorioCredenciais(sessao).buscar_por_email(dados["email"])
+        senha_hash = credencial.senha_hash
+        assert senha_hash.startswith("$argon2id$")
+        assert verificar_senha(dados["senha"], senha_hash)
+    for resposta in [*recusas, criada, repetida, divergente]:
+        assert dados["senha"] not in resposta.text
+        assert senha_hash not in resposta.text
+    assert dados["senha"] not in caplog.text
+    assert senha_hash not in caplog.text
+
+
+def test_api_provisiona_uma_credencial_sob_concorrencia(banco_migrado, monkeypatch):
+    _, fabrica, _ = banco_migrado
+    monkeypatch.setenv("PERFIS_SERVICE_TOKEN", "teste-perfis-auth")
+    email = f"{uuid4().hex}@example.com"
+    barreira = Barrier(2)
+
+    def provisionar(endereco):
+        with TestClient(app) as cliente:
+            barreira.wait(timeout=5)
+            return cliente.post(
+                "/v1/interno/credenciais",
+                headers={"Authorization": "Bearer teste-perfis-auth"},
+                json={
+                    "conta_id": str(uuid4()),
+                    "email": endereco,
+                    "senha": "Senha-do-teste",
+                    "tipo_conta": "CLIENTE",
+                },
+            ).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        assert sorted(executor.map(provisionar, (email, email.upper()))) == [201, 409]
+    with fabrica() as sessao:
+        assert sessao.scalar(
+            select(func.count()).select_from(Credencial).where(func.lower(Credencial.email) == email)
+        ) == 1
 
 
 def test_persiste_e_recupera_apenas_o_hash_da_senha(banco_migrado, caplog):

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     AUTHENTICACAO_ISSUER: str = "http://localhost:8001"
     VIACEP_URL: str = "https://viacep.com.br/ws"
     VIACEP_TIMEOUT: float = 5.0
+    CORS_ORIGENS_PERMITIDAS: str = "http://localhost:3000,http://localhost:5173"
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

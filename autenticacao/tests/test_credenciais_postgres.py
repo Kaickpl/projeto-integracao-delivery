@@ -6,6 +6,7 @@ from pathlib import Path
 from threading import Barrier
 from uuid import uuid4
 
+import httpx
 import pytest
 from alembic import command
 from alembic.config import Config
@@ -20,6 +21,8 @@ from src.core.security import verificar_senha
 from src.main import app
 from src.modules.credenciais.models import Credencial
 from src.modules.credenciais.repository import RepositorioCredenciais
+from src.modules.oauth import service
+from src.modules.sessoes.models import CodigoAutorizacao, SessaoRefresh
 
 
 @pytest.fixture(scope="module")
@@ -154,6 +157,56 @@ def test_api_provisiona_uma_credencial_sob_concorrencia(banco_migrado, monkeypat
         assert sessao.scalar(
             select(func.count()).select_from(Credencial).where(func.lower(Credencial.email) == email)
         ) == 1
+
+
+@pytest.mark.parametrize("status_perfis,pronta,codigo", [
+    ("PENDENTE_APROVACAO", True, 403),
+    ("SUSPENSO", True, 403),
+    ("ATIVO", False, 403),
+    ("ATIVO", None, 503),
+    (None, None, 503),
+])
+def test_login_recusado_nao_grava_codigo_ou_sessao(
+    banco_migrado, monkeypatch, status_perfis, pronta, codigo,
+):
+    _, fabrica, _ = banco_migrado
+    conta_id = uuid4()
+    email = f"{uuid4().hex}@example.com"
+    senha = "Senha-do-teste"
+    with fabrica.begin() as sessao:
+        RepositorioCredenciais(sessao).criar(conta_id, email, senha)
+
+    def consultar_perfis(url, **kwargs):
+        assert url.endswith(f"/contas/{conta_id}/status")
+        if status_perfis is None:
+            raise httpx.ReadTimeout("timeout simulado")
+        dados = {"conta_id": str(conta_id), "status": status_perfis}
+        if pronta is not None:
+            dados["identidade_pronta"] = pronta
+        return httpx.Response(200, json=dados, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(service.httpx, "get", consultar_perfis)
+    monkeypatch.setenv("OAUTH_CLIENT_ID", "delivery-app")
+    monkeypatch.setenv("OAUTH_REDIRECT_URI", "http://localhost:3000/oauth/callback")
+    with TestClient(app, follow_redirects=False) as cliente:
+        recusado = cliente.post(
+            "/v1/oauth/entrar",
+            data={
+                "email": email,
+                "senha": senha,
+                "client_id": "delivery-app",
+                "redirect_uri": "http://localhost:3000/oauth/callback",
+                "response_type": "code",
+                "code_challenge": "a" * 43,
+                "code_challenge_method": "S256",
+                "state": "estado-do-teste",
+            },
+        )
+    assert recusado.status_code == codigo
+    assert "location" not in recusado.headers
+    with fabrica() as sessao:
+        assert sessao.scalar(select(CodigoAutorizacao).where(CodigoAutorizacao.conta_id == conta_id)) is None
+        assert sessao.scalar(select(SessaoRefresh).where(SessaoRefresh.conta_id == conta_id)) is None
 
 
 def test_persiste_e_recupera_apenas_o_hash_da_senha(banco_migrado, caplog):

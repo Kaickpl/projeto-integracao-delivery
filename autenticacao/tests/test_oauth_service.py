@@ -243,15 +243,19 @@ def test_decodificador_permita_validar_assinatura_de_token_expirado_no_logout(mo
 
 
 def test_consulta_integrada_busca_status_e_papel(monkeypatch):
+    conta_id = uuid4()
     chamadas = []
     monkeypatch.setattr(service, "Settings", lambda: SimpleNamespace(
         PERFIS_URL="http://perfis", PERFIS_STATUS_SERVICE_TOKEN=SecretStr("ps"),
         AUTORIZACAO_URL="http://rbac", AUTORIZACAO_SERVICE_TOKEN=SecretStr("r"),
         INTEGRATION_TIMEOUT_SECONDS=2,
     ))
-    respostas = iter([{"status": "ATIVO"}, {"role": "ENTREGADOR"}])
+    respostas = iter([
+        {"conta_id": str(conta_id), "status": "ATIVO", "identidade_pronta": True},
+        {"role": "ENTREGADOR"},
+    ])
     monkeypatch.setattr(service, "_consultar_servico", lambda *args: (chamadas.append(args), next(respostas))[1])
-    assert service.obter_status_e_papel(uuid4()) == ("ATIVO", "ENTREGADOR")
+    assert service.obter_status_e_papel(conta_id) == ("ATIVO", "ENTREGADOR")
     assert len(chamadas) == 2
 
 
@@ -309,19 +313,28 @@ def test_consulta_servico_trata_timeout_como_503(monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "status,papel,codigo",
-    [("PENDENTE_APROVACAO", "CLIENTE", 403), ("ATIVO", "DONO", 403)],
+    "perfil,codigo",
+    [
+        ({"status": "PENDENTE_APROVACAO", "identidade_pronta": True}, 403),
+        ({"status": "SUSPENSO", "identidade_pronta": True}, 403),
+        ({"status": "ATIVO", "identidade_pronta": False}, 403),
+        ({"status": "ATIVO"}, 503),
+        ({"status": "ATIVO", "identidade_pronta": "true"}, 503),
+        ({"status": "desconhecido", "identidade_pronta": True}, 503),
+        ({"status": "ATIVO", "identidade_pronta": True, "conta_id": "outra"}, 503),
+    ],
 )
-def test_bloqueia_status_pendente_ou_papel_desconhecido(monkeypatch, status, papel, codigo):
+def test_recusa_perfil_antes_de_consultar_rbac(monkeypatch, perfil, codigo):
     monkeypatch.setattr(service, "Settings", lambda: SimpleNamespace(
         PERFIS_URL="http://perfis", PERFIS_STATUS_SERVICE_TOKEN=SecretStr("ps"),
         AUTORIZACAO_URL="http://rbac", AUTORIZACAO_SERVICE_TOKEN=SecretStr("r"),
         INTEGRATION_TIMEOUT_SECONDS=2,
     ))
-    respostas = iter([{"status": status}, {"role": papel}])
+    conta_id = uuid4()
+    respostas = iter([{"conta_id": str(conta_id), **perfil}])
     monkeypatch.setattr(service, "_consultar_servico", lambda *_: next(respostas))
     with pytest.raises(HTTPException) as erro:
-        service.obter_status_e_papel(uuid4())
+        service.obter_status_e_papel(conta_id)
     assert erro.value.status_code == codigo
 
 

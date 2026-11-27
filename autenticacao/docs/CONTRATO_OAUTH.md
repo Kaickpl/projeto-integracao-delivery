@@ -35,6 +35,20 @@ RabbitMQ não participa da operação.
 
 Usar Authorization Code com PKCE. O aplicativo redireciona o usuário ao Authorization Server; o aplicativo não coleta a senha para repassá-la em um grant de senha. O grant Resource Owner Password Credentials não será usado.
 
+No INT-01, `POST /v1/oauth/entrar` verifica e-mail e senha. Depois lê
+`conta_id`, `status` e `identidade_pronta` de Perfis antes de consultar o
+papel no RBAC. O sucesso devolve `303` com `code` e o `state` original
+na URL de retorno. Credenciais inválidas devolvem `401` com a mesma mensagem,
+conta inelegível devolve `403` e falha de comunicação ou resposta inválida
+de Perfis devolve `503`.
+
+Com `grant_type=authorization_code`, `POST /v1/oauth/tokens` valida código
+e PKCE, reconsulta Perfis e RBAC e emite o access token e o refresh token.
+Código ou PKCE inválido devolve `400`. Inelegibilidade ou falha de integração
+devolve `403` ou `503`. Os erros HTTP dessas operações de usuário usam
+`{"detail": "mensagem em português"}`. A validação dos campos obrigatórios
+continua respondendo `422` com detalhes por campo.
+
 ### Serviço para serviço
 
 Client Credentials usa `client_secret_basic`, `resource` como URI absoluta (RFC 8707) e `scope` com escopos separados por espaço em `POST /v1/oauth/tokens`. Erros incluem `error` OAuth estável e a mensagem comum em português. O Auth armazena somente hash Argon2id de credenciais individuais. Antes de emitir, consulta a política autoritativa de audiência/escopos no RBAC. O grant fica desativado por padrão até o aceite dos consumidores e do RBAC; quando habilitado, é publicado nos metadados.

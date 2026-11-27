@@ -58,7 +58,7 @@ def _desafio(verificador: str) -> str:
     return base64.urlsafe_b64encode(hashlib.sha256(verificador.encode()).digest()).rstrip(b"=").decode()
 
 
-def _autenticar(client: httpx.Client, auth_url: str, email: str, senha: str) -> dict:
+def _obter_dados_da_troca(client: httpx.Client, auth_url: str, email: str, senha: str) -> dict:
     verificador = secrets.token_urlsafe(32)
     desafio = _desafio(verificador)
     state = secrets.token_urlsafe(24)
@@ -80,15 +80,20 @@ def _autenticar(client: httpx.Client, auth_url: str, email: str, senha: str) -> 
     destino = urlsplit(resposta_login.headers["location"])
     retornados = parse_qs(destino.query)
     assert retornados["state"] == [state]
+    return {
+        "grant_type": "authorization_code",
+        "code": retornados["code"][0],
+        "code_verifier": verificador,
+        "client_id": parametros["client_id"],
+        "redirect_uri": parametros["redirect_uri"],
+    }
+
+
+def _autenticar(client: httpx.Client, auth_url: str, email: str, senha: str, *, troca_url=None) -> dict:
+    dados = _obter_dados_da_troca(client, auth_url, email, senha)
     tokens = client.post(
-        f"{auth_url}/v1/oauth/tokens",
-        data={
-            "grant_type": "authorization_code",
-            "code": retornados["code"][0],
-            "code_verifier": verificador,
-            "client_id": parametros["client_id"],
-            "redirect_uri": parametros["redirect_uri"],
-        },
+        f"{troca_url or auth_url}/v1/oauth/tokens",
+        data=dados,
     )
     assert tokens.status_code == 200, tokens.text
     return tokens.json()
@@ -276,7 +281,29 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
         assert papel.status_code == 200, papel.text
         assert papel.json()["role"] == "CLIENTE"
 
-        primeiro = _autenticar(client, auth_url, email, senha)
+        for email_incorreto, senha_incorreta in (
+            (email, "senha-incorreta"),
+            (f"inexistente-{uuid.uuid4().hex}@example.com", senha),
+        ):
+            recusada = client.post(
+                f"{auth_url}/v1/oauth/entrar",
+                data={**parametros_pendentes, "email": email_incorreto, "senha": senha_incorreta},
+            )
+            assert recusada.status_code == 401
+            assert recusada.json() == {"detail": "Usuário ou senha inválidos"}
+            assert "location" not in recusada.headers
+
+        replica = bases["AUTH_REPLICA"]
+        dados_troca = _obter_dados_da_troca(client, auth_url, email, senha)
+        rota_status = f"{perfis_url}/admin/perfis/{conta_id}/status"
+        assert client.patch(rota_status, json={"status": "SUSPENSO"}).status_code == 200
+        troca_recusada = client.post(f"{replica}/v1/oauth/tokens", data=dados_troca)
+        assert troca_recusada.status_code == 403
+        assert troca_recusada.json() == {"detail": "Conta não está ativa"}
+        assert client.patch(rota_status, json={"status": "ATIVO"}).status_code == 200
+
+        primeiro = _autenticar(client, auth_url, email, senha, troca_url=replica)
+        inverso = _autenticar(client, replica, email, senha, troca_url=auth_url)
         jwks = client.get(f"{auth_url}/.well-known/jwks.json").json()
         cabecalho_jwt = jwt.get_unverified_header(primeiro["access_token"])
         chave = next(item for item in jwks["keys"] if item["kid"] == cabecalho_jwt["kid"])
@@ -296,6 +323,23 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
         validacao_rbac = _validar_no_rbac(client, rbac_url, primeiro["access_token"])
         assert validacao_rbac.status_code == 200, validacao_rbac.text
         assert validacao_rbac.json()["role"] == "CLIENTE"
+        assert inverso["refresh_token"]
+        token_inverso = inverso["access_token"]
+        jwks_replica = client.get(f"{replica}/.well-known/jwks.json").json()
+        kid_inverso = jwt.get_unverified_header(token_inverso)["kid"]
+        chave_inversa = next(item for item in jwks_replica["keys"] if item["kid"] == kid_inverso)
+        claims_inversos = jwt.decode(
+            token_inverso,
+            jwt.PyJWK.from_dict(chave_inversa).key,
+            algorithms=["RS256"],
+            issuer="http://127.0.0.1:18001",
+            audience="delivery-api",
+        )
+        assert claims_inversos["sub"] == conta_id
+        assert claims_inversos["role"] == "CLIENTE"
+        rbac_inverso = _validar_no_rbac(client, rbac_url, token_inverso)
+        assert rbac_inverso.status_code == 200
+        assert rbac_inverso.json()["role"] == "CLIENTE"
 
         refresh1 = primeiro["refresh_token"]
         renovado = client.post(

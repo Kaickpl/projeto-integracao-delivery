@@ -29,6 +29,8 @@ RabbitMQ não participa da operação.
 | 409 | E-mail vinculado a outra conta ou credencial divergente para o mesmo UUID. |
 | 422 | Dados inválidos. Os detalhes identificam os campos sem ecoar valores. |
 
+Para exclusão de conta, Perfis chama `DELETE /v1/interno/credenciais/{conta_id}` com o mesmo Bearer interno. A operação remove a credencial e revoga todas as sessões no Auth; chamadas repetidas são idempotentes.
+
 ## Fluxos OAuth 2.0
 
 ### Usuário interativo

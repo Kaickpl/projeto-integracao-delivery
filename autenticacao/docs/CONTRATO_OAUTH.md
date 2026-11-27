@@ -78,7 +78,8 @@ Clientes são provisionados em operação administrativa local; o segredo aparec
 | `POST /v1/oauth/tokens` | Trocar código, renovar via refresh token ou, quando habilitado, emitir token M2M via Client Credentials. |
 | `POST /v1/oauth/revogar` | Revogar a família de sessão pelo refresh token; resposta não revela se o token existe. |
 | `POST /v1/oauth/introspeccao` | Consulta autenticada por serviço confiável (Autorização/RBAC) para confirmar `active`, `sub`, `jti` e `role`, inclusive estado de revogação. |
-| `POST /v1/tokens/validar` (Autorização/RBAC) | Recebe o access token em `Authorization: Bearer`, confirma a sessão online no Auth e devolve o papel atualmente associado no RBAC. |
+| `POST /v1/tokens/validar` (Autorização/RBAC) | Recebe o access token em `Authorization: Bearer`, confirma a sessão online no Auth e devolve o papel atualmente associado no RBAC e as permissões desse papel (`permissoes`). |
+| `POST /v1/autorizacao/verificar` (Autorização/RBAC) | Com o mesmo token e `{"permissao": "recurso:acao"}`, responde `200` se o papel atual tem a permissão ou `403` se não tem. |
 | `GET /v1/interno/clientes/{client_id}/permissoes?audiencia=...` (Autorização/RBAC) | Auth consulta, com credencial interna, os escopos autorizados ao cliente e recurso. |
 | `POST /v1/tokens/servico/validar` (Autorização/RBAC) | Valida um token M2M por JWKS, compara os escopos requeridos com o token e com a política atual do RBAC. |
 | `GET /.well-known/jwks.json` | Publicar chaves públicas para validar assinaturas. |

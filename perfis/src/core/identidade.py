@@ -31,3 +31,18 @@ def criar_credencial_e_associar_papel(conta_id, email: str, senha: str, role: st
         ) from None
     except httpx.HTTPError:
         raise ServicoIndisponivel("Não foi possível provisionar a identidade no Auth/RBAC") from None
+
+
+def remover_papel(conta_id) -> None:
+    """Remove o papel da conta no RBAC. Idempotente: 204 mesmo sem papel."""
+    try:
+        resposta = httpx.delete(
+            f"{settings.AUTORIZACAO_URL.rstrip('/')}/v1/interno/contas/{conta_id}/papel",
+            headers={"Authorization": f"Bearer {settings.AUTORIZACAO_SERVICE_TOKEN}"},
+            timeout=settings.AUTORIZACAO_TIMEOUT,
+        )
+        resposta.raise_for_status()
+    except httpx.HTTPError:
+        raise ServicoIndisponivel(
+            "Não foi possível remover o papel da conta no RBAC"
+        ) from None

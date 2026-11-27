@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     AUTENTICACAO_SERVICE_TOKEN: str = ""
     AUTORIZACAO_URL: str = "http://autorizacao:8003"
     AUTORIZACAO_SERVICE_TOKEN: str = ""
+    # Tempo máximo para o RBAC validar o token do usuário em rotas protegidas.
+    AUTORIZACAO_TIMEOUT: float = 3.0
     PERFIS_OAUTH_AUDIENCE: str = "http://perfis:8002"
     PERFIS_READ_SCOPE: str = "perfis:ler"
     AUTHENTICACAO_ISSUER: str = "http://localhost:8001"

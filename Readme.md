@@ -6,7 +6,7 @@ Este repositório contém três serviços da plataforma de delivery, desenvolvid
 |---|---|---:|
 | Autenticação (`autenticacao`) | Credenciais, login OAuth 2.0, emissão e revogação de tokens | 8001 |
 | Perfis (`perfis`) | Cadastro de clientes, lojas, entregadores e administradores | 8002 |
-| Autorização/RBAC (`autorizacao`) | Papéis de usuários e permissões de serviços | 8003 |
+| Autorização/RBAC (`autorizacao`) | Papéis, permissões de cada papel, decisões de autorização e permissões de serviços | 8003 |
 
 ## Fluxos principais
 
@@ -24,6 +24,14 @@ Os access tokens de usuário são JWT assinados com RS256 e têm validade de 25 
 
 O Auth publica as chaves públicas em `/.well-known/jwks.json`. Refresh tokens são rotativos e persistidos; o logout revoga a família da sessão. O RBAC oferece `POST /v1/tokens/validar` para conferir o token, a revogação e o papel atual.
 
+### Autorização das rotas (RBAC)
+
+Cada papel tem um conjunto de permissões no formato `recurso:acao` (por exemplo `perfis:alterar_status` ou `loja:operar`), mantido no RBAC. Os quatro papéis são fixos; o ADMIN pode conceder ou remover permissões de cada papel pela API do RBAC, e cada mudança fica registrada na auditoria.
+
+As rotas protegidas de Perfis enviam o token do usuário a `POST /v1/tokens/validar`, que devolve o papel e as permissões atuais. Perfis libera a rota quando o papel tem a permissão; nas permissões `*_proprio`, também confere se o recurso é da própria conta. Sem token: `401`; sem permissão ou recurso de outra conta: `403`; RBAC ou Auth fora: `503`. Não há cache, então uma permissão removida vale na próxima requisição.
+
+Continuam públicos o cadastro (`POST /clientes`, `/lojas`, `/entregadores`), a consulta de CEP e a vitrine de lojas (`GET /lojas`, `GET /lojas/{id}`, `GET /lojas/{id}/horarios`), que não devolve CNPJ, e-mail nem telefone. A tabela completa de permissões está em [Autorização/RBAC](autorizacao/README.md).
+
 ### Tokens para serviços (Client Credentials)
 
 O Auth também implementa `grant_type=client_credentials`, com segredo individual por serviço, escopos e audiência. O RBAC mantém a política de permissões; os tokens M2M não têm `role` de usuário nem refresh token. A validade padrão é 10 minutos.
@@ -40,7 +48,10 @@ Este fluxo está **desativado por padrão** com `OAUTH_CLIENT_CREDENTIALS_ENABLE
 | Auth | `GET /.well-known/jwks.json` | Publica as chaves para validar assinaturas JWT |
 | Perfis | `GET /v1/perfis/{id}` | Devolve `id`, `nome` e `email` a um serviço M2M autorizado com `perfis:ler` |
 | Perfis | `POST /clientes`, `/lojas`, `/entregadores` | Cria perfil com provisionamento recuperável; exige `Idempotency-Key` UUID |
-| RBAC | `POST /v1/tokens/validar` | Valida token de usuário e confere papel/revogação |
+| Perfis | `/admin/*`, `PATCH`/`DELETE` em `/lojas/{id}` e `/entregadores/{id}` | Exigem token de usuário com a permissão da rota |
+| RBAC | `POST /v1/tokens/validar` | Valida token de usuário, confere papel/revogação e devolve as permissões do papel |
+| RBAC | `POST /v1/autorizacao/verificar` | Responde se o usuário tem uma permissão |
+| RBAC | `/v1/permissoes`, `/v1/papeis`, `/v1/auditoria` | Gestão de permissões por papel e auditoria (exige `rbac:gerenciar`) |
 | RBAC | `POST /v1/tokens/servico/validar` | Valida token M2M e os escopos solicitados |
 
 As rotas internas de consulta de status e permissões são destinadas à comunicação entre serviços. Consulte o Swagger de cada serviço para os schemas e respostas completos.
@@ -70,6 +81,14 @@ Depois, inicie os serviços:
 ```powershell
 docker compose up --build
 ```
+
+As rotas `/admin/*` de Perfis exigem um ADMIN autenticado. Com os três serviços no ar, crie o primeiro ADMIN uma única vez; a senha é pedida no terminal:
+
+```powershell
+docker compose run --rm perfis python -m src.criar_admin_inicial --nome "Nome do Admin" --email admin@exemplo.com --cpf SEU_CPF --telefone 81999990000 --data-nascimento 1990-01-31
+```
+
+Os demais administradores são criados por `POST /admin/admins`, com o token desse ADMIN.
 
 Swagger/OpenAPI:
 
@@ -104,7 +123,7 @@ A meta do projeto é 80% de cobertura agregada, com mínimo de 75% por serviço 
 
 ## Pendências conhecidas
 
-- Proteger as rotas administrativas de Perfis com autenticação e autorização adequadas antes de expor o serviço.
+- Fazer a suspensão de conta valer na hora: a introspecção do Auth não confere o status, então uma conta suspensa mantém acesso até o access token expirar (até 25 minutos).
 - Definir recuperação/idempotência para falhas parciais no cadastro, que atualmente chama Perfis, Auth e RBAC sem uma transação distribuída.
 - Obter o aceite de Vitor e dos consumidores para os contratos de login, validação JWT/JWKS, audiência, escopos e claims.
 - Testar Client Credentials com um consumidor real da turma; os testes atuais usam um consumidor simulado.

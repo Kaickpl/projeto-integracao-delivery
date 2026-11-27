@@ -8,7 +8,11 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from src.core.exceptions import AcaoNaoPermitida, DadoDuplicado, ServicoIndisponivel
-from src.core.identidade import criar_credencial_e_associar_papel, remover_papel
+from src.core.identidade import (
+    criar_credencial_e_associar_papel,
+    remover_credencial,
+    remover_papel,
+)
 from src.modules.perfil_usuario.perfil import Perfil
 
 
@@ -90,6 +94,7 @@ def remover_cadastro(db: Session, perfil: Perfil, mensagem_vinculo: str) -> None
 
     try:
         remover_papel(conta_id)
+        remover_credencial(conta_id)
     except ServicoIndisponivel:
         db.rollback()
         raise

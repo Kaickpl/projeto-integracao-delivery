@@ -46,3 +46,18 @@ def remover_papel(conta_id) -> None:
         raise ServicoIndisponivel(
             "Não foi possível remover o papel da conta no RBAC"
         ) from None
+
+
+def remover_credencial(conta_id) -> None:
+    """Remove credencial no Auth e revoga todas as sessões da conta."""
+    try:
+        resposta = httpx.delete(
+            f"{settings.AUTENTICACAO_URL.rstrip('/')}/v1/interno/credenciais/{conta_id}",
+            headers={"Authorization": f"Bearer {settings.AUTENTICACAO_SERVICE_TOKEN}"},
+            timeout=settings.AUTORIZACAO_TIMEOUT,
+        )
+        resposta.raise_for_status()
+    except httpx.HTTPError:
+        raise ServicoIndisponivel(
+            "Não foi possível remover as credenciais e sessões da conta no Auth"
+        ) from None

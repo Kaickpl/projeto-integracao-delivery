@@ -6,6 +6,7 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from sqlalchemy.exc import SQLAlchemyError
+from pydantic import SecretStr
 
 from src.core.database import get_db
 import src.main as principal
@@ -360,6 +361,35 @@ def test_endpoint_de_revogacao_persiste_pelo_servico(monkeypatch):
         assert resposta.status_code == 200
         assert resposta.json() == {}
         assert tokens == ["refresh-opaco"]
+    finally:
+        app.dependency_overrides.clear()
+
+
+def test_remocao_interna_de_credenciais_exige_token_de_perfis(monkeypatch):
+    chamadas = []
+    conta_id = "00000000-0000-4000-8000-000000000001"
+    monkeypatch.setattr(
+        rotas_oauth.service,
+        "remover_credencial_e_revogar_sessoes",
+        lambda db, conta: chamadas.append((db, str(conta))),
+    )
+    cliente = cliente_teste(monkeypatch)
+    monkeypatch.setattr(
+        rotas_oauth,
+        "Settings",
+        lambda: SimpleNamespace(PERFIS_SERVICE_TOKEN=SecretStr("segredo-perfis")),
+    )
+    try:
+        sem_token = cliente.delete(f"/v1/interno/credenciais/{conta_id}")
+        assert sem_token.status_code == 401
+
+        removida = cliente.delete(
+            f"/v1/interno/credenciais/{conta_id}",
+            headers={"Authorization": "Bearer segredo-perfis"},
+        )
+        assert removida.status_code == 204
+        assert len(chamadas) == 1
+        assert chamadas[0][1] == conta_id
     finally:
         app.dependency_overrides.clear()
 

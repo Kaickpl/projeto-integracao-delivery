@@ -9,7 +9,7 @@ from urllib.parse import quote
 import httpx
 import jwt
 from fastapi import HTTPException
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select, update
 from sqlalchemy.orm import Session
 
 from src.core.config import Settings
@@ -226,6 +226,13 @@ def renovar(db: Session, token: str):
     )
     if sessao_id is None:
         raise HTTPException(401, "Refresh token inválido")
+    conta_id = db.scalar(
+        select(SessaoRefresh.conta_id).where(SessaoRefresh.token_hash == digest)
+    )
+    if conta_id is None or RepositorioCredenciais(db).buscar_por_conta_id(
+        conta_id, bloquear=True
+    ) is None:
+        raise HTTPException(401, "Refresh token inválido")
     if not _bloquear_familia(db, sessao_id):
         raise HTTPException(401, "Refresh token inválido")
     registro = db.scalar(
@@ -268,6 +275,33 @@ def renovar(db: Session, token: str):
     )
     db.commit()
     return {"access_token": access, "refresh_token": refresh, "token_type": "Bearer", "expires_in": 1500}
+
+
+def remover_credencial_e_revogar_sessoes(db: Session, conta_id: UUID) -> None:
+    """Remove a conta no Auth e revoga todos os tokens numa transação.
+
+    A mesma ordem de locks é usada pelo fluxo de refresh: primeiro a credencial,
+    depois as linhas de sessão. Códigos de autorização são bloqueados antes da
+    credencial, como na troca PKCE, para evitar emissão concorrente durante a
+    exclusão da conta.
+    """
+    db.scalars(
+        select(CodigoAutorizacao.id)
+        .where(CodigoAutorizacao.conta_id == conta_id)
+        .with_for_update()
+    ).all()
+    RepositorioCredenciais(db).remover_por_conta_id(conta_id)
+    agora = datetime.now(timezone.utc)
+    db.execute(
+        update(SessaoRefresh)
+        .where(
+            SessaoRefresh.conta_id == conta_id,
+            SessaoRefresh.revogado_em.is_(None),
+        )
+        .values(revogado_em=agora)
+    )
+    db.execute(delete(CodigoAutorizacao).where(CodigoAutorizacao.conta_id == conta_id))
+    db.commit()
 
 
 def revogar(db: Session, token: str) -> dict:

@@ -107,6 +107,24 @@ def test_revogar_token_desconhecido_e_idempotente(monkeypatch):
     assert db.commits == 0
 
 
+def test_remover_credencial_revoga_sessoes_e_apaga_codigos(monkeypatch):
+    conta_id = uuid4()
+    removidas = []
+    db = FakeDB()
+    db.scalars = lambda _consulta: SimpleNamespace(all=lambda: [])
+    db.execute = lambda _consulta: None
+    monkeypatch.setattr(
+        service.RepositorioCredenciais,
+        "remover_por_conta_id",
+        lambda _repositorio, conta: removidas.append(conta),
+    )
+
+    service.remover_credencial_e_revogar_sessoes(db, conta_id)
+
+    assert removidas == [conta_id]
+    assert db.commits == 1
+
+
 def test_troca_codigo_valida_pkce_e_emite_tokens(monkeypatch):
     verifier = "a" * 43
     import base64, hashlib

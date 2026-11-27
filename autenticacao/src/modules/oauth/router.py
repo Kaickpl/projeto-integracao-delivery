@@ -12,6 +12,7 @@ from pydantic import BaseModel, EmailStr, Field, field_validator
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse
+from starlette.responses import Response
 
 from src.core.database import get_db
 from src.core.security import verificar_senha
@@ -211,6 +212,30 @@ def criar_credencial(
             return JSONResponse(status_code=200, content={"conta_id": str(dados.conta_id)})
         raise HTTPException(409, "E-mail ou conta já cadastrada") from None
     return {"conta_id": str(dados.conta_id)}
+
+
+@router.delete(
+    "/interno/credenciais/{conta_id}",
+    status_code=204,
+    summary="Remover credenciais e revogar sessões de uma conta",
+    description="Operação interna idempotente, autenticada pelo serviço de Perfis.",
+    responses={401: {"model": ErroCredencialInterna}, 503: {"model": ErroCredencialInterna}},
+)
+def remover_credencial(
+    conta_id: UUID,
+    authorization: HTTPAuthorizationCredentials | None = Security(bearer_perfis),
+    db: Session = Depends(get_db),
+) -> Response:
+    esperado = Settings().PERFIS_SERVICE_TOKEN.get_secret_value()
+    recebido = authorization.credentials if authorization else ""
+    if not esperado or not secrets.compare_digest(recebido.encode(), esperado.encode()):
+        raise HTTPException(401, "Credencial de serviço inválida")
+    try:
+        service.remover_credencial_e_revogar_sessoes(db, conta_id)
+    except SQLAlchemyError:
+        db.rollback()
+        raise HTTPException(503, "Não foi possível remover as credenciais da conta") from None
+    return Response(status_code=204)
 
 
 @router.post(

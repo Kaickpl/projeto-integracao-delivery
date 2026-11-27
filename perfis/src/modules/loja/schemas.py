@@ -57,9 +57,6 @@ class LojaCreate(BaseModel):
     # Opcional no cadastro da conta; o Catálogo define a categoria do restaurante.
     categoria: CategoriaLoja | None = None
     taxa_entrega: int = Field(default=0, ge=0, description="Em centavos (R$ 5,90 -> 590)")
-    valor_minimo_pedido: int = Field(
-        default=0, ge=0, description="Em centavos. 0 = sem pedido mínimo"
-    )
     tempo_estimado_min: int | None = Field(default=None, gt=0, description="Em minutos")
     tempo_estimado_max: int | None = Field(default=None, gt=0, description="Em minutos")
     endereco: EnderecoCreate
@@ -118,12 +115,9 @@ class LojaInformacoesUpdate(BaseModel):
     taxa_entrega: int | None = Field(
         default=None, ge=0, description="Em centavos (R$ 5,90 -> 590)"
     )
-    valor_minimo_pedido: int | None = Field(
-        default=None, ge=0, description="Em centavos. 0 = sem pedido mínimo"
-    )
     endereco: EnderecoUpdate | None = None
 
-    @field_validator("categoria", "taxa_entrega", "valor_minimo_pedido", "endereco")
+    @field_validator("categoria", "taxa_entrega", "endereco")
     @classmethod
     def nao_pode_ser_nulo(cls, v):
         if v is None:
@@ -154,7 +148,6 @@ class LojaResponse(BaseModel):
     url_imagem: str | None
     categoria: CategoriaLoja | None
     taxa_entrega: int
-    valor_minimo_pedido: int
     tempo_estimado_min: int | None
     tempo_estimado_max: int | None
     status_funcionamento: StatusFuncionamento
@@ -176,7 +169,6 @@ class LojaPublicaResponse(BaseModel):
     url_imagem: str | None
     categoria: CategoriaLoja | None
     taxa_entrega: int
-    valor_minimo_pedido: int
     tempo_estimado_min: int | None
     tempo_estimado_max: int | None
     status_funcionamento: StatusFuncionamento

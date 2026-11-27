@@ -63,7 +63,8 @@ class Loja(Perfil):
     taxa_entrega: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")
     )
-    # Também em centavos. 0 = sem pedido mínimo.
+    # Coluna legada: o pedido mínimo é mantido pelo Catálogo e não é exposto
+    # nem alterado pelas APIs de Perfis.
     valor_minimo_pedido: Mapped[int] = mapped_column(
         Integer, default=0, server_default=text("0")
     )

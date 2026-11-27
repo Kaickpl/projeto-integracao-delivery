@@ -36,6 +36,7 @@ def cadastrar_loja(
 ) -> Loja:
     loja = Loja(
         **dados.model_dump(exclude={"endereco", "senha"}),
+        valor_minimo_pedido=0,
         endereco=Endereco(**dados.endereco.model_dump()),
         status=StatusConta.PENDENTE_APROVACAO,
         status_funcionamento=StatusFuncionamento.FECHADO,

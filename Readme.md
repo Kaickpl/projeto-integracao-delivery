@@ -14,6 +14,8 @@ Este repositório contém três serviços da plataforma de delivery, desenvolvid
 
 Perfis recebe os cadastros dos quatro tipos de conta. As credenciais são enviadas ao Auth, que guarda o hash da senha; o papel é associado no RBAC. Clientes, lojas e entregadores começam com o status `PENDENTE_APROVACAO`. O status da conta é separado do estado operacional da loja ou do entregador.
 
+Perfis mantém os dados da conta e da empresa da loja. Categoria, taxa, tempos, pedido mínimo e demais dados comerciais do restaurante são definidos no Catálogo; `valor_minimo_pedido` não faz parte do cadastro nem das respostas da API de Perfis.
+
 O login usa Authorization Code com PKCE. O usuário autentica-se na página do Auth; depois, o aplicativo troca o código e o verificador PKCE por tokens. Antes de emitir ou renovar tokens, Auth consulta o status em Perfis e o papel no RBAC. Só contas `ATIVO` recebem tokens.
 
 Os access tokens de usuário são JWT assinados com RS256 e têm validade de 25 minutos. Claims importantes:

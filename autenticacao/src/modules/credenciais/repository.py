@@ -24,6 +24,11 @@ class RepositorioCredenciais:
     def buscar_por_conta_id(self, conta_id: UUID, *, bloquear: bool = False) -> Credencial | None:
         return self.sessao.get(Credencial, conta_id, with_for_update=bloquear or None)
 
+    def remover_por_conta_id(self, conta_id: UUID) -> None:
+        credencial = self.buscar_por_conta_id(conta_id, bloquear=True)
+        if credencial is not None:
+            self.sessao.delete(credencial)
+
     def buscar_por_email(self, email: str, *, bloquear: bool = False) -> Credencial | None:
         consulta = select(Credencial).where(
             func.lower(Credencial.email) == func.lower(email.strip())

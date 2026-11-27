@@ -48,9 +48,9 @@ Permissões iniciais:
 | `admins:criar` | ADMIN | `POST /admin/admins` |
 | `entregadores:listar` | ADMIN | `GET /entregadores`, `GET /entregadores/status/{status}`, `GET /entregadores/{id}` |
 | `rbac:gerenciar` | ADMIN | Rotas de gestão deste serviço |
-| `perfil:ler_proprio` | CLIENTE, LOJA, ENTREGADOR | `GET /lojas/{id}/perfil` e `GET /entregadores/{id}` da própria conta |
-| `perfil:editar_proprio` | LOJA, ENTREGADOR | `PATCH /lojas/{id}`, `PATCH /lojas/{id}/informacoes`, `PUT /lojas/{id}/horarios`, `PATCH /entregadores/{id}` |
-| `perfil:remover_proprio` | LOJA, ENTREGADOR | `DELETE /lojas/{id}`, `DELETE /entregadores/{id}` |
+| `perfil:ler_proprio` | CLIENTE, LOJA, ENTREGADOR | `GET /clientes/{id}`, `GET /lojas/{id}/perfil` e `GET /entregadores/{id}` da própria conta |
+| `perfil:editar_proprio` | CLIENTE, LOJA, ENTREGADOR | `PATCH /clientes/{id}` (nome, telefone e endereço), edição de loja e `PATCH /entregadores/{id}` |
+| `perfil:remover_proprio` | CLIENTE, LOJA, ENTREGADOR | `DELETE /clientes/{id}`, `DELETE /lojas/{id}` e `DELETE /entregadores/{id}` |
 | `loja:operar` | LOJA | `PATCH /lojas/{id}/status` (abrir/fechar) |
 | `entregador:operar` | ENTREGADOR | `PATCH /entregadores/{id}/status` |
 

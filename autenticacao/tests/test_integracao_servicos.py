@@ -160,6 +160,13 @@ def test_perfis_recusa_admin_menor_de_idade_antes_de_provisionar():
     headers = {"Idempotency-Key": str(uuid.uuid4())}
     rota = f"{bases['PERFIS']}/admin/admins"
     with httpx.Client(timeout=10, follow_redirects=False) as client:
+        tokens_admin = _autenticar(
+            client,
+            bases["AUTH"],
+            os.getenv("INTEGRATION_ADMIN_EMAIL", "admin-integracao@example.com"),
+            os.getenv("INTEGRATION_ADMIN_SENHA", "Admin-integracao-2026"),
+        )
+        headers["Authorization"] = f"Bearer {tokens_admin['access_token']}"
         recusada = client.post(
             rota, headers=headers,
             json={**dados, "data_nascimento": (maioridade + timedelta(days=1)).isoformat()},
@@ -310,11 +317,16 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
         replica = bases["AUTH_REPLICA"]
         dados_troca = _obter_dados_da_troca(client, auth_url, email, senha)
         rota_status = f"{perfis_url}/admin/perfis/{conta_id}/status"
-        assert client.patch(rota_status, json={"status": "SUSPENSO"}).status_code == 200
+        cabecalho_admin = {"Authorization": f"Bearer {tokens_admin['access_token']}"}
+        assert client.patch(
+            rota_status, json={"status": "SUSPENSO"}, headers=cabecalho_admin
+        ).status_code == 200
         troca_recusada = client.post(f"{replica}/v1/oauth/tokens", data=dados_troca)
         assert troca_recusada.status_code == 403
         assert troca_recusada.json() == {"detail": "Conta não está ativa"}
-        assert client.patch(rota_status, json={"status": "ATIVO"}).status_code == 200
+        assert client.patch(
+            rota_status, json={"status": "ATIVO"}, headers=cabecalho_admin
+        ).status_code == 200
 
         primeiro = _autenticar(client, auth_url, email, senha, troca_url=replica)
         inverso = _autenticar(client, replica, email, senha, troca_url=auth_url)
@@ -463,15 +475,114 @@ def test_cadastro_login_refresh_revogacao_status_e_papel_nos_tres_servicos():
             ).status_code == 401
 
 
+def test_cliente_cadastra_endereco_consulta_edita_e_exclui_a_propria_conta():
+    bases = _ambiente_integracao()
+    auth, perfis = bases["AUTH"], bases["PERFIS"]
+    email = f"cliente-{uuid.uuid4().hex}@example.com"
+    senha = "Senha-integracao-2026!"
+    endereco = {
+        "cep": "40000000",
+        "logradouro": "Rua de Teste",
+        "numero": "123",
+        "complemento": "Apto 4",
+        "bairro": "Centro",
+        "cidade": "Salvador",
+        "uf": "BA",
+        "referencia": "Próximo à praça",
+    }
+
+    with httpx.Client(timeout=10, follow_redirects=False) as client:
+        cadastro = client.post(
+            f"{perfis}/clientes",
+            headers={"Idempotency-Key": str(uuid.uuid4())},
+            json={
+                "nome": "Cliente CRUD",
+                "cpf": _cpf_valido(),
+                "email": email,
+                "senha": senha,
+                "telefone": "71999990000",
+                "endereco": endereco,
+            },
+        )
+        assert cadastro.status_code == 201, cadastro.text
+        conta_id = cadastro.json()["id"]
+        assert cadastro.json()["endereco"]["cep"] == "40000000"
+
+        admin = _autenticar(
+            client,
+            auth,
+            os.getenv("INTEGRATION_ADMIN_EMAIL", "admin-integracao@example.com"),
+            os.getenv("INTEGRATION_ADMIN_SENHA", "Admin-integracao-2026"),
+        )
+        ativado = client.patch(
+            f"{perfis}/admin/perfis/{conta_id}/status",
+            json={"status": "ATIVO"},
+            headers={"Authorization": f"Bearer {admin['access_token']}"},
+        )
+        assert ativado.status_code == 200, ativado.text
+
+        usuario = _autenticar(client, auth, email, senha)
+        cabecalho_usuario = {"Authorization": f"Bearer {usuario['access_token']}"}
+        rota_perfil = f"{perfis}/clientes/{conta_id}"
+
+        sem_token = client.get(rota_perfil)
+        assert sem_token.status_code == 401
+        proprio = client.get(rota_perfil, headers=cabecalho_usuario)
+        assert proprio.status_code == 200, proprio.text
+        assert proprio.json()["email"] == email
+        assert proprio.json()["endereco"]["logradouro"] == "Rua de Teste"
+
+        outro_id = str(uuid.uuid4())
+        de_outra_pessoa = client.get(
+            f"{perfis}/clientes/{outro_id}", headers=cabecalho_usuario
+        )
+        assert de_outra_pessoa.status_code == 403
+
+        atualizado = client.patch(
+            rota_perfil,
+            headers=cabecalho_usuario,
+            json={
+                "nome": "Cliente CRUD atualizado",
+                "telefone": "71988887777",
+                "endereco": {**endereco, "numero": "456"},
+            },
+        )
+        assert atualizado.status_code == 200, atualizado.text
+        assert atualizado.json()["nome"] == "Cliente CRUD atualizado"
+        assert atualizado.json()["endereco"]["numero"] == "456"
+
+        removido = client.delete(rota_perfil, headers=cabecalho_usuario)
+        assert removido.status_code == 204, removido.text
+        token_revogado = client.get(rota_perfil, headers=cabecalho_usuario)
+        assert token_revogado.status_code == 401
+        refresh_revogado = client.post(
+            f"{auth}/v1/oauth/tokens",
+            data={
+                "grant_type": "refresh_token",
+                "refresh_token": usuario["refresh_token"],
+            },
+        )
+        assert refresh_revogado.status_code == 401
+
+
 def test_bloqueio_concorrente_de_login_compartilhado_entre_instancias():
     bases = _ambiente_integracao()
     auth, replica, perfis = bases["AUTH"], bases["AUTH_REPLICA"], bases["PERFIS"]
     email = f"teste-{uuid.uuid4().hex}@example.com"
     senha = "Senha-integracao-2026!"
     with httpx.Client(timeout=10, follow_redirects=False) as client:
+        admin = _autenticar(
+            client,
+            auth,
+            os.getenv("INTEGRATION_ADMIN_EMAIL", "admin-integracao@example.com"),
+            os.getenv("INTEGRATION_ADMIN_SENHA", "Admin-integracao-2026"),
+        )
         cadastro = client.post(
             f"{perfis}/admin/admins",
-            headers={"Idempotency-Key": str(uuid.uuid4())},
+            headers={
+                "Idempotency-Key": str(uuid.uuid4()),
+                "Authorization": f"Bearer {admin['access_token']}",
+            },
             json={
                 "nome": "Admin de integração",
                 "cpf_cnpj": _cpf_valido(),

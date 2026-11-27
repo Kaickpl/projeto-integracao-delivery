@@ -84,7 +84,7 @@ de um código anterior também falha. O teste PostgreSQL em
 `autenticacao/tests/test_credenciais_postgres.py` usa um relógio controlado
 para cobrir os limites da janela e a limpeza após um login bem-sucedido.
 
-Todas as rotas de criação de perfil (`POST /clientes`, `/lojas`, `/entregadores` e `/admin/admins`) exigem `Idempotency-Key` UUID. O cliente deve gerar uma chave por cadastro e reutilizá-la em qualquer repetição do mesmo pedido. Perfis grava o perfil como identidade pendente antes de chamar Auth e RBAC; uma falha retorna `503`, preserva a chave e permite retomar o provisionamento com a mesma requisição. Uma nova chave não retoma o cadastro anterior.
+Todas as rotas de criação de perfil (`POST /clientes`, `/lojas`, `/entregadores` e `/admin/admins`) exigem `Idempotency-Key` UUID. O cliente deve gerar uma chave por cadastro e reutilizá-la em qualquer repetição do mesmo pedido. Perfis grava o perfil como identidade pendente antes de chamar Auth e RBAC; uma falha retorna `503`, preserva a chave e permite retomar o provisionamento com a mesma requisição. Uma nova chave não retoma o cadastro anterior. O endereço de cliente é opcional no `POST /clientes`. `GET`, `PATCH` e `DELETE /clientes/{id}` exigem token e as permissões próprias do CLIENTE; o PATCH atualiza nome/telefone e substitui ou remove o endereço. A exclusão remove o papel no RBAC, a credencial no Auth e revoga as sessões.
 
 ## Encerrar e descartar o banco local
 

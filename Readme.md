@@ -30,7 +30,7 @@ Cada papel tem um conjunto de permissões no formato `recurso:acao` (por exemplo
 
 As rotas protegidas de Perfis enviam o token do usuário a `POST /v1/tokens/validar`, que devolve o papel e as permissões atuais. Perfis libera a rota quando o papel tem a permissão; nas permissões `*_proprio`, também confere se o recurso é da própria conta. Sem token: `401`; sem permissão ou recurso de outra conta: `403`; RBAC ou Auth fora: `503`. Não há cache, então uma permissão removida vale na próxima requisição.
 
-Continuam públicos o cadastro (`POST /clientes`, `/lojas`, `/entregadores`), a consulta de CEP e a vitrine de lojas (`GET /lojas`, `GET /lojas/{id}`, `GET /lojas/{id}/horarios`), que não devolve CNPJ, e-mail nem telefone. A tabela completa de permissões está em [Autorização/RBAC](autorizacao/README.md).
+Continuam públicos o cadastro (`POST /clientes`, `/lojas`, `/entregadores`), a consulta de CEP e a vitrine de lojas (`GET /lojas`, `GET /lojas/{id}`, `GET /lojas/{id}/horarios`), que não devolve CNPJ, e-mail nem telefone. O cadastro de cliente aceita endereço opcional. Clientes autenticados podem consultar, editar nome/telefone/endereço e excluir a própria conta em `GET`, `PATCH` e `DELETE /clientes/{id}`. A tabela completa de permissões está em [Autorização/RBAC](autorizacao/README.md).
 
 ### Tokens para serviços (Client Credentials)
 
@@ -48,6 +48,7 @@ Este fluxo está **desativado por padrão** com `OAUTH_CLIENT_CREDENTIALS_ENABLE
 | Auth | `GET /.well-known/jwks.json` | Publica as chaves para validar assinaturas JWT |
 | Perfis | `GET /v1/perfis/{id}` | Devolve `id`, `nome` e `email` a um serviço M2M autorizado com `perfis:ler` |
 | Perfis | `POST /clientes`, `/lojas`, `/entregadores` | Cria perfil com provisionamento recuperável; exige `Idempotency-Key` UUID |
+| Perfis | `GET`, `PATCH`, `DELETE /clientes/{id}` | Consulta, edita ou exclui a própria conta; exige token e permissão do RBAC |
 | Perfis | `/admin/*`, `PATCH`/`DELETE` em `/lojas/{id}` e `/entregadores/{id}` | Exigem token de usuário com a permissão da rota |
 | RBAC | `POST /v1/tokens/validar` | Valida token de usuário, confere papel/revogação e devolve as permissões do papel |
 | RBAC | `POST /v1/autorizacao/verificar` | Responde se o usuário tem uma permissão |

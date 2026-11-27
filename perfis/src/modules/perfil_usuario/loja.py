@@ -56,8 +56,8 @@ class Loja(Perfil):
     razao_social: Mapped[str] = mapped_column(String(150))
     descricao: Mapped[str | None] = mapped_column(String(500))
     url_imagem: Mapped[str | None] = mapped_column(String(500))
-    categoria: Mapped[CategoriaLoja] = mapped_column(
-        Enum(CategoriaLoja, name="categoria_loja")
+    categoria: Mapped[CategoriaLoja | None] = mapped_column(
+        Enum(CategoriaLoja, name="categoria_loja"), nullable=True
     )
     # Em centavos (R$ 5,90 -> 590), como no padrão da turma.
     taxa_entrega: Mapped[int] = mapped_column(

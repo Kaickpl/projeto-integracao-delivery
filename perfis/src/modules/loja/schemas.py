@@ -54,7 +54,8 @@ class LojaCreate(BaseModel):
     razao_social: str = Field(min_length=2, max_length=150)
     descricao: str | None = Field(default=None, max_length=500)
     url_imagem: str | None = Field(default=None, max_length=500)
-    categoria: CategoriaLoja
+    # Opcional no cadastro da conta; o Catálogo define a categoria do restaurante.
+    categoria: CategoriaLoja | None = None
     taxa_entrega: int = Field(default=0, ge=0, description="Em centavos (R$ 5,90 -> 590)")
     valor_minimo_pedido: int = Field(
         default=0, ge=0, description="Em centavos. 0 = sem pedido mínimo"
@@ -151,7 +152,7 @@ class LojaResponse(BaseModel):
     razao_social: str
     descricao: str | None
     url_imagem: str | None
-    categoria: CategoriaLoja
+    categoria: CategoriaLoja | None
     taxa_entrega: int
     valor_minimo_pedido: int
     tempo_estimado_min: int | None
@@ -173,7 +174,7 @@ class LojaPublicaResponse(BaseModel):
     razao_social: str
     descricao: str | None
     url_imagem: str | None
-    categoria: CategoriaLoja
+    categoria: CategoriaLoja | None
     taxa_entrega: int
     valor_minimo_pedido: int
     tempo_estimado_min: int | None

@@ -4,8 +4,8 @@ O Auth mantém credenciais, códigos de autorização e sessões de refresh no s
 
 ## OAuth 2.0 implementado
 
-- `GET /v1/oauth/autorizar` inicia Authorization Code + PKCE e mostra a página de autenticação hospedada no Auth.
-- `POST /v1/oauth/entrar` recebe o formulário dessa página. O aplicativo cliente não coleta nem envia senha ao Auth em seu próprio endpoint.
+- `GET /v1/oauth/autorizar` inicia Authorization Code + PKCE e mostra a página de autenticação hospedada no Auth, para frontends sem tela de login própria.
+- `POST /v1/oauth/entrar` recebe e-mail, senha e o desafio PKCE, vindos da tela de login do frontend ou da página do Auth, e responde `303` para a URL de retorno com `code` e `state`. O frontend que usa tela própria precisa chamar o Auth na mesma origem para ler esse redirecionamento.
 - `POST /v1/oauth/tokens` troca o código de uso único por tokens ou rotaciona um refresh token. O corpo é `application/x-www-form-urlencoded`.
 - `POST /v1/oauth/revogar` segue o formato de formulário RFC 7009. Aceita um refresh token ou access token assinado e revoga a família inteira da sessão; sucesso idempotente não revela se o token era conhecido. Falha de persistência retorna `503`.
 - `POST /v1/oauth/introspeccao` confirma estado de sessão e devolve `active`, `sub`, `jti` e `role`; exige credencial de serviço de Autorização/RBAC.
@@ -19,7 +19,7 @@ O access token de usuário usa `typ=at+jwt`, `kid`, `iss`, `sub` UUID, `aud`, `i
 
 O access token M2M tem validade configurável de 1 a 15 minutos (10 por padrão), `sub=servico:<client_id>`, `client_id` e `scope`; não contém `role`, `sid`, claims pessoais nem refresh token. A validade curta limita o tempo de uso de tokens já emitidos: desativar ou rotacionar um cliente impede novas emissões, mas tokens existentes podem ser aceitos até expirar. Consumidores que exijam revogação imediata devem consultar a decisão de escopos no RBAC em cada operação protegida. O RBAC valida assinatura por JWKS e compara os escopos com a política atual em `POST /v1/tokens/servico/validar`.
 
-O grant de senha (`password`) não é aceito no endpoint de tokens. A senha é submetida apenas ao formulário hospedado pelo Auth, no caminho separado `/v1/oauth/entrar`. Client Credentials fica desativado por padrão até o aceite do contrato pelos consumidores. Quando habilitado, aparece nos metadados OAuth.
+O grant de senha (`password`) não é aceito no endpoint de tokens. A senha é enviada apenas a `/v1/oauth/entrar`, e o código emitido ali só é trocado com o verificador PKCE. Client Credentials fica desativado por padrão até o aceite do contrato pelos consumidores. Quando habilitado, aparece nos metadados OAuth.
 
 ## Configuração
 

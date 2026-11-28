@@ -35,7 +35,12 @@ Para exclusão de conta, Perfis chama `DELETE /v1/interno/credenciais/{conta_id}
 
 ### Usuário interativo
 
-Usar Authorization Code com PKCE. O aplicativo redireciona o usuário ao Authorization Server; o aplicativo não coleta a senha para repassá-la em um grant de senha. O grant Resource Owner Password Credentials não será usado.
+Usar Authorization Code com PKCE. O login pode começar de dois jeitos, e os dois terminam no mesmo código de uso único:
+
+- **Tela de login do frontend.** O frontend gera o verificador PKCE, o desafio S256 e o `state` e envia e-mail e senha em `POST /v1/oauth/entrar` (`application/x-www-form-urlencoded`), com `client_id`, `redirect_uri`, `response_type=code`, `code_challenge`, `code_challenge_method=S256` e `state`. No sucesso, o Auth responde `303` para a `redirect_uri` com `code` e `state`; o frontend lê esses parâmetros no endereço final do redirecionamento, confere o `state` e troca o código com o verificador em `POST /v1/oauth/tokens`. Para ler o redirecionamento, o frontend chama o Auth na mesma origem (por exemplo, por proxy reverso), e a `redirect_uri` precisa estar em `OAUTH_REDIRECT_URI`/`OAUTH_REDIRECT_URIS`.
+- **Página hospedada pelo Auth.** `GET /v1/oauth/autorizar` mostra um formulário mínimo que envia para o mesmo `POST /v1/oauth/entrar` e redireciona o navegador para a `redirect_uri`.
+
+A senha só é enviada a `POST /v1/oauth/entrar`. O grant Resource Owner Password Credentials (`grant_type=password`) continua fora do endpoint de tokens: o código emitido no login só é trocado com o verificador PKCE de quem o pediu.
 
 No INT-01, `POST /v1/oauth/entrar` verifica e-mail e senha. Depois lê
 `conta_id`, `status` e `identidade_pronta` de Perfis antes de consultar o
@@ -75,8 +80,8 @@ Clientes são provisionados em operação administrativa local; o segredo aparec
 
 | Endpoint | Uso |
 | --- | --- |
-| `GET /v1/oauth/autorizar` | Início do Authorization Code + PKCE; apresenta a página hospedada no Auth. |
-| `POST /v1/oauth/entrar` | Submissão do formulário hospedado pelo Auth; não é um grant OAuth de senha. |
+| `GET /v1/oauth/autorizar` | Início do Authorization Code + PKCE pela página hospedada no Auth, para frontends sem tela de login própria. |
+| `POST /v1/oauth/entrar` | Recebe e-mail, senha e o desafio PKCE, da tela de login do frontend ou da página do Auth, e responde `303` com `code` e `state`; não é um grant OAuth de senha. |
 | `POST /v1/oauth/tokens` | Trocar código, renovar via refresh token ou, quando habilitado, emitir token M2M via Client Credentials. |
 | `POST /v1/oauth/revogar` | Revogar a família de sessão pelo refresh token; resposta não revela se o token existe. |
 | `POST /v1/oauth/introspeccao` | Consulta autenticada por serviço confiável (Autorização/RBAC) para confirmar `active`, `sub`, `jti` e `role`, inclusive estado de revogação. |

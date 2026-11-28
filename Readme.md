@@ -16,7 +16,7 @@ Perfis recebe os cadastros dos quatro tipos de conta. As credenciais são enviad
 
 Perfis mantém os dados da conta e da empresa da loja. Categoria, taxa, tempos, pedido mínimo e demais dados comerciais do restaurante são definidos no Catálogo; `valor_minimo_pedido` não faz parte do cadastro nem das respostas da API de Perfis.
 
-O login usa Authorization Code com PKCE. O usuário autentica-se na página do Auth; depois, o aplicativo troca o código e o verificador PKCE por tokens. Antes de emitir ou renovar tokens, Auth consulta o status em Perfis e o papel no RBAC. Só contas `ATIVO` recebem tokens.
+O login usa Authorization Code com PKCE. O usuário informa e-mail e senha na tela de login do frontend, que os envia a `POST /v1/oauth/entrar` com o desafio PKCE; a página hospedada em `GET /v1/oauth/autorizar` continua disponível para frontends sem tela própria. Depois, o aplicativo troca o código e o verificador PKCE por tokens. Antes de emitir ou renovar tokens, Auth consulta o status em Perfis e o papel no RBAC. Só contas `ATIVO` recebem tokens.
 
 Os access tokens de usuário são JWT assinados com RS256 e têm validade de 25 minutos. Claims importantes:
 
@@ -44,7 +44,8 @@ Este fluxo está **desativado por padrão** com `OAUTH_CLIENT_CREDENTIALS_ENABLE
 
 | Serviço | Endpoint | Uso |
 |---|---|---|
-| Auth | `GET /v1/oauth/autorizar` | Inicia o login Authorization Code + PKCE |
+| Auth | `GET /v1/oauth/autorizar` | Página de login hospedada no Auth (Authorization Code + PKCE) |
+| Auth | `POST /v1/oauth/entrar` | Recebe e-mail, senha e desafio PKCE da tela do frontend ou da página do Auth; responde `303` com `code` |
 | Auth | `POST /v1/oauth/tokens` | Troca código, renova sessão ou, se habilitado, emite token M2M |
 | Auth | `POST /v1/oauth/revogar` | Revoga uma sessão de usuário |
 | Auth | `GET /.well-known/jwks.json` | Publica as chaves para validar assinaturas JWT |

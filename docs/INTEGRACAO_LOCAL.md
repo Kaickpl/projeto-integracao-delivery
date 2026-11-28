@@ -98,6 +98,6 @@ Não substitua a configuração deste arquivo pelos `.env` da turma. As migraç�
 
 ### Frontends e OAuth
 
-Auth permite configurar origens de navegador em `CORS_ORIGENS_PERMITIDAS` e callbacks OAuth em `OAUTH_REDIRECT_URI`/`OAUTH_REDIRECT_URIS` (listas separadas por vírgula). O exemplo local inclui `http://localhost:3000` e `http://localhost:5173`. No ambiente publicado, configure somente as origens e callbacks HTTPS exatos de cada frontend. O callback deve corresponder ao endereço onde aquele frontend recebe o código OAuth.
+Auth permite configurar origens de navegador em `CORS_ORIGENS_PERMITIDAS` e callbacks OAuth em `OAUTH_REDIRECT_URI`/`OAUTH_REDIRECT_URIS` (listas separadas por vírgula). O exemplo local inclui `http://localhost:3000` e `http://localhost:5173`. No ambiente publicado, configure somente as origens e callbacks HTTPS exatos de cada frontend. O callback deve corresponder ao endereço onde aquele frontend recebe o código OAuth. Um frontend com tela de login própria envia o formulário a `POST /v1/oauth/entrar` e lê o código no redirecionamento; para isso, chama o Auth na mesma origem, por proxy.
 
 Perfis usa `CORS_ORIGENS_PERMITIDAS` no próprio `.env` para permitir que o frontend acesse cadastro, consulta e edição de perfis. O padrão local também inclui `http://localhost:3000` e `http://localhost:5173`; no deploy, troque pelos domínios HTTPS exatos do frontend.
